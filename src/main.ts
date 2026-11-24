@@ -13,6 +13,7 @@ import {
   type Position,
   type PriceUpdate,
   type Quote,
+  TEMPLATES,
   type TradeTerms,
   accountFrom,
   dia,
@@ -674,7 +675,7 @@ function render(): void {
           el("span", { className: "muted", textContent: o.expiresAt ? `usable ${until(o.expiresAt).replace("in ", "for ")}` : "" }),
         ),
         o.expiresAt && o.expiresAt - now() < 7200
-          ? el("div", { className: "notice", textContent: `This offer's coin expires ${until(o.expiresAt)}. Withdraw it and offer again to keep it safe.` })
+          ? el("div", { className: "notice", textContent: executor?.runs(TEMPLATES.renew_offer) ? `This offer's coin expires ${until(o.expiresAt)}. The network's executor renews it before then.` : `This offer's coin expires ${until(o.expiresAt)}. Withdraw it and offer again to keep it safe.` })
           : null,
         el(
           "div",
@@ -737,6 +738,10 @@ async function boot(): Promise<void> {
   engine = await Engine.connect({ ...NETWORKS[net], oracle });
   void Executor.connect(NETWORKS[net].executorUrl, engine.keys).then((e) => {
     executor = e;
+    // the market's own delegations: an executor that has the renewal templates renews every
+    // offer and position before its coin expires
+    for (const renewal of engine.renewalDelegations()) void e?.delegate(renewal);
+    render();
   });
   const saved = store.get<Account | null>("account", null);
   account = saved ?? newAccount();

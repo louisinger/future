@@ -1058,6 +1058,31 @@ func TestTemplates(t *testing.T) {
 			},
 		},
 		{
+			name: "renew_offer",
+			variables: map[string][]byte{
+				"oracle_pk":        m.oracle.key(m.oracleSk).Raw,
+				"position_program": m.position.PkScript[2:],
+				"renewal_window":   scriptNum(renewalWindow),
+				"max_fee":          scriptNum(maxFee),
+			},
+			// an offer left by an opened trade: its transaction also carries the price and the
+			// position's note
+			source: newCoin(
+				t, m.offer.PkScript, 5_000_000, quoteOf(10_000_000, now), terms.packet(),
+				position.packet(),
+			),
+			expiry: now + 3600,
+			opts: []arkade.ExecuteOption{
+				arkade.WithExpiry(now + 3600),
+				arkade.WithIntentMessage(`{"onchain_output_indexes":[],"type":"register"}`),
+			},
+			check: func(t *testing.T, tx *wire.MsgTx) {
+				require.Equal(t, m.offer.PkScript, tx.TxOut[0].PkScript)
+				require.Equal(t, int64(5_000_000), tx.TxOut[0].Value)
+				require.Equal(t, packetData(t, terms.packet()), txPacket(t, tx, offerPacket))
+			},
+		},
+		{
 			name: "renew_position",
 			variables: map[string][]byte{
 				"oracle_pk":      m.oracle.key(m.oracleSk).Raw,
@@ -1065,7 +1090,8 @@ func TestTemplates(t *testing.T) {
 				"max_fee":        scriptNum(maxFee),
 			},
 			source: newCoin(
-				t, m.position.PkScript, position.margin+position.houseMargin, position.packet(),
+				t, m.position.PkScript, position.margin+position.houseMargin,
+				quoteOf(10_000_000, now), terms.packet(), position.packet(),
 			),
 			expiry: now + 3600,
 			opts: []arkade.ExecuteOption{

@@ -76,7 +76,12 @@ export interface Deposit {
  * The ids of the market's executor templates, as an executor names them. They are built on the
  * DIA contracts: a market on another oracle scheme has none.
  */
-export const TEMPLATES: { register_offer: string; refund_trade: string; renew_position: string } = templateIds;
+export const TEMPLATES: {
+  register_offer: string;
+  refund_trade: string;
+  renew_offer: string;
+  renew_position: string;
+} = templateIds;
 
 /** What an executor needs to run one of the market's templates for an address. */
 export interface Delegation {
@@ -297,7 +302,7 @@ export class Engine {
   offerDelegation(t: OfferTerms): Delegation {
     this.requireTemplates();
     return {
-      template: templateIds.register_offer,
+      template: TEMPLATES.register_offer,
       variables: {
         oracle_pk: hex.encode(this.oracle.key),
         renewal_window: num(RENEWAL_WINDOW),
@@ -318,7 +323,7 @@ export class Engine {
   refundDelegation(t: TradeTerms): Delegation {
     this.requireTemplates();
     return {
-      template: templateIds.refund_trade,
+      template: TEMPLATES.refund_trade,
       variables: {
         oracle_pk: hex.encode(this.oracle.key),
         position_program: hex.encode(program(this.position.pkScript)),
@@ -335,6 +340,26 @@ export class Engine {
         exit_delay: num(this.exitDelay),
       },
     };
+  }
+
+  /**
+   * What an executor needs to renew every offer and every position of the market before its coin
+   * expires. They are the market's, not a user's: registering them again changes nothing.
+   */
+  renewalDelegations(): Delegation[] {
+    this.requireTemplates();
+    const market = {
+      oracle_pk: hex.encode(this.oracle.key),
+      renewal_window: num(RENEWAL_WINDOW),
+      max_fee: num(MAX_FEE),
+    };
+    return [
+      {
+        template: TEMPLATES.renew_offer,
+        variables: { ...market, position_program: hex.encode(program(this.position.pkScript)) },
+      },
+      { template: TEMPLATES.renew_position, variables: market },
+    ];
   }
 
   /** What a trade of `margin` under terms would open at now. */

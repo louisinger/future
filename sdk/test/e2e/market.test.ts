@@ -6,7 +6,7 @@ import { execSync } from "node:child_process";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import { hex } from "@scure/base";
 import { beforeAll, describe, expect, it } from "vitest";
-import { Engine, ForeignAddressError, NoCoinError, newAccount, type Account } from "../../src/engine";
+import { Engine, ForeignAddressError, NoCoinError, TEMPLATES, newAccount, type Account } from "../../src/engine";
 import { Executor } from "../../src/executor";
 import { type Oracle, dia, localOracle, schnorrOracle, trustedUpdate } from "../../src/oracle";
 import { NoOfferError, levels, type OfferTerms, type Position, type Quote, type TradeTerms } from "../../src/payoff";
@@ -310,6 +310,63 @@ describe("a market", () => {
     sh("nigiri rpc --generate 12");
     await eventually(async () => expect(await d.paid(d.traderPayout)).toBe(DEPOSIT), 120);
   }, 480_000);
+
+  it("lets an executor renew an offer and a position before their coins expire", async ({ skip }) => {
+    const d = await Desk.open();
+    const executor = await Executor.connect(EXECUTOR_URL, d.engine.keys);
+    if (!executor?.runs(TEMPLATES.renew_offer) || !executor.runs(TEMPLATES.renew_position)) return skip();
+    // arkd before v0.9.27 refuses a coin without an exit leaf in a batch: nothing can renew there
+    const { version } = (await (await fetch(`${ARK_URL}/v1/info`)).json()) as { version: string };
+    const [major, minor, patch] = version.replace(/^v/, "").split(/[.-]/).map(Number);
+    if (!(major > 0 || minor > 9 || (minor === 9 && patch >= 27))) return skip();
+    for (const renewal of d.engine.renewalDelegations()) expect(await executor.delegate(renewal)).toBe(true);
+    // registering the market's renewals again is harmless
+    for (const renewal of d.engine.renewalDelegations()) expect(await executor.delegate(renewal)).toBe(true);
+
+    await d.offer(10);
+    const [offer] = await eventually(async () => {
+      const open = await d.engine.offers();
+      expect(open).toHaveLength(1);
+      return open;
+    });
+    const terms = d.tradeTerms(0, 2, 5_000);
+    pay(d.engine.tradeDeposit(terms).address);
+    await eventually(() => d.fill(terms, 10_000_000));
+    const position = await d.position();
+
+    const renewed = await eventually(async () => {
+      const [o] = await d.engine.offers();
+      const [p] = await d.engine.positions();
+      expect(o.txid).not.toBe(offer.txid);
+      expect(p.txid).not.toBe(position.txid);
+      return { offer: o, position: p };
+    }, 300);
+    expect(renewed.offer).toMatchObject({ lpProgram: offer.lpProgram, spreadBps: 10, maxLeverage: 50 });
+    expect(offer.amount - renewed.offer.amount).toBeGreaterThanOrEqual(0);
+    expect(offer.amount - renewed.offer.amount).toBeLessThanOrEqual(1_000);
+    expect(renewed.offer.expiresAt).toBeGreaterThan(offer.expiresAt);
+    expect(renewed.position).toMatchObject({
+      entryPrice: position.entryPrice, margin: position.margin, houseMargin: position.houseMargin,
+      startAt: position.startAt, expiry: position.expiry, traderPk: position.traderPk,
+    });
+    expect(renewed.position.expiresAt).toBeGreaterThan(position.expiresAt);
+    console.log("RENEWAL", {
+      offer: [offer.amount, renewed.offer.amount, offer.expiresAt, renewed.offer.expiresAt],
+      position: [position.amount, renewed.position.amount, position.expiresAt, renewed.position.expiresAt],
+    });
+
+    // a renewed position still settles, and a renewed offer still withdraws: nothing is left for
+    // the executor to keep renewing
+    await eventually(async () => {
+      const [p] = await d.engine.positions();
+      await d.close(p, 10_500_000, d.trader.key);
+    }, 120);
+    await eventually(async () => {
+      const [o] = await d.engine.offers();
+      await d.engine.withdraw(o, d.lp.key);
+    }, 120);
+    await eventually(async () => expect(await d.engine.offers()).toHaveLength(0), 60);
+  }, 900_000);
 
   it("is refused by an executor serving another operator", async () => {
     const d = await Desk.open();

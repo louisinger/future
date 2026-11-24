@@ -93,10 +93,12 @@ Matching is not a protocol step. Whoever builds the opening transaction pairs a 
 offer; the page takes the cheapest offer that fits and falls back to the next if one is
 refused.
 
-Register and Refund are also executord templates. When the network's executor has them, the
-page registers a delegation for each address it creates, and the executor sends the transaction
-when the coin arrives or the deadline passes. Opening and settling need a price fetched at the
-time, which an executor cannot do: a page does those.
+Register, Refund and Renew are also executord templates. When the network's executor has them,
+the page registers a delegation for each address it creates, and one renewal delegation each
+for the offer and the position address, which cover every coin there. The executor then sends
+the transaction when the coin arrives, the deadline passes or the coin nears its expiry.
+Opening and settling need a price fetched at the time, which an executor cannot do, and
+cancelling and withdrawing need the owner's signature at the time: a page does those.
 
 ## What each side is protected from
 
@@ -124,10 +126,15 @@ time, which an executor cannot do: a page does those.
 - **Expiry.** A new coin expires with the earliest of the coins spent, so a counterparty can
   open against an offer with a coin about to expire and shorten the life of the provider's
   remaining liquidity and of the position. The client refuses to open a trade that would
-  outlive its coins, but the scripts cannot read another input's expiry. Renewal is the
-  remedy and is not run by the page.
-- **Renewal's fee.** `renew` lets up to 1,000 sats leave per renewal and does not pin where
-  they go. It has never been run on a real stack.
+  outlive its coins, but the scripts cannot read another input's expiry.
+- **Renewal.** `renew` joins a batch, and arkd up to v0.9.26 refuses a coin without a
+  unilateral exit leaf there, which offers and positions do not have: on those versions nothing
+  can renew them. v0.9.27 accepts them. `renew` lets up to 1,000 sats leave per renewal as the
+  batch's fee. It has not been seen working end to end.
+- **A shared address can be spammed.** One delegation renews every coin at the offer address,
+  another every coin at the position address. Anyone can send a coin there that the template
+  cannot spend, and the executor disables a template refused ten times in a row: renewal can be
+  switched off for the whole market by ten junk coins, until the operator enables it again.
 - **The operator.** Offers and positions have no unilateral exit.
 - **Gap risk.** A side cannot lose more than it locked.
 - **Privacy.** Every term of every trade is public.
@@ -149,6 +156,8 @@ time, which an executor cannot do: a page does those.
   price signer.
 - By hand in a browser: the page connects on mainnet, mutinynet and regtest and shows DIA's
   price; no horizontal overflow at 320 and 375 pixels on either page.
-- `renew_position` has only been built and executed in the engine.
+- `renew_offer` and `renew_position` are built and executed in the engine, on a coin left by
+  an opened trade. On regtest the executor built and submitted both renewals and arkd v0.9.13
+  refused them for the missing exit leaf; they have not run on an arkd that accepts them.
 - Nothing has been traded on mutinynet or mainnet. The mainnet emulator is v0.0.9, the tests
   ran against v0.0.10: v0.0.9 has every opcode the contracts use, by reading its source.

@@ -142,19 +142,26 @@ position is worth before it settles.
 
 ## Executor
 
-An [executor](https://github.com/arkade-os/executor) that has the market's templates publishes
-an offer when its deposit is paid and refunds a trade deposit that missed its deadline, with no
-client running. It cannot open or settle a trade: those need a price.
+An [executor](https://github.com/arkade-os/executor) that has the market's templates acts with
+no client running: it publishes an offer when its deposit is paid, refunds a trade deposit that
+missed its deadline, and renews offers and positions before their coins expire. It cannot open
+or settle a trade, which need a price, nor cancel or withdraw, which need the owner's signature.
 
 ```ts
 import { Executor } from "@louisinger/future-sdk";
 
 const executor = await Executor.connect(NETWORKS.mainnet.executorUrl, market.keys);
-await executor?.delegate(market.offerDelegation(offerTerms));
-await executor?.delegate(market.refundDelegation(tradeTerms));
+await executor?.delegate(market.offerDelegation(offerTerms));     // per offer deposit address
+await executor?.delegate(market.refundDelegation(tradeTerms));    // per trade deposit address
+for (const renewal of market.renewalDelegations()) {              // once per market
+  await executor?.delegate(renewal);
+}
 ```
 
-`scripts/register-templates.sh <admin url>` registers the templates on an executor.
+`delegate` resolves to false when the executor does not have the template; registering the same
+delegation twice changes nothing. `scripts/register-templates.sh <admin url> [renew]` registers
+the templates on an executor. Renewal needs an operator on arkd v0.9.27 or later: see the
+repository's README.
 
 ## What is in the package
 
