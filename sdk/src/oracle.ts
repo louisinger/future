@@ -1,7 +1,12 @@
-// Signed BTC/USD prices, in the form the contracts verify: a DIA OracleUpdate, an EIP-712 message
-// signed with an Ethereum key and published on DIA's Lasernet. https://www.diadata.org/docs
+// Signed BTC/USD prices. A market's contracts are built with one price check, a scheme of
+// contracts/oracles, and one key: an Oracle here is the client side of that pair. It names the
+// scheme, holds the key, and fetches or signs the prices the check accepts.
+//
+// To add a provider: write its check in contracts/oracles/<name>.json, regenerate the artifacts,
+// and implement Oracle with that name as its scheme.
 
-import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { concatBytes } from "@noble/hashes/utils.js";
 import { hex } from "@scure/base";
@@ -34,13 +39,19 @@ export interface PriceUpdate {
   price: number;
   /** When the price was taken, unix seconds. */
   time: number;
-  /** What a contract's price check takes: the signed price, nonce, expiry and signature. */
+  /** What the scheme's price check takes, in the order of its inputs. */
   witness: Uint8Array[];
 }
 
+/** The price checks the contracts can be built with: the files of contracts/oracles. */
+export type OracleScheme = "dia" | "schnorr";
+
 export interface Oracle {
-  /** The key the contracts check prices against. */
+  /** The price check the market's contracts run. */
+  readonly scheme: OracleScheme;
+  /** The key that check verifies prices against, as the contracts hold it. */
   readonly key: Uint8Array;
+  /** The newest price, with the witness that makes the check accept it. */
   latest(): Promise<PriceUpdate>;
 }
 
@@ -112,10 +123,10 @@ export function scriptNum(n: bigint): Uint8Array {
 }
 
 /**
- * Reads what the registry's `getLatestIntentByType` returned and checks it is signed by the key
- * the contracts trust, so a transaction is never built on an update they would refuse.
+ * Reads an update as DIA's registry returns it and checks it is signed by `key`, the key the
+ * contracts trust, so a transaction is never built on an update they would refuse.
  */
-export function decodeDia(result: string): PriceUpdate {
+export function decodeDia(result: string, key: string = DIA_KEY): PriceUpdate {
   let out: Uint8Array;
   try {
     out = hex.decode(result.replace(/^0x/, ""));
@@ -127,8 +138,8 @@ export function decodeDia(result: string): PriceUpdate {
   const u = { nonce: field(3), expiry: field(4), raw: field(6), time: field(7) };
   const at = field(9) < BigInt(out.length) ? 64 + Number(field(9)) : out.length;
   const signature = out.slice(at, at + 64);
-  const key = hex.decode(DIA_KEY).subarray(1);
-  if (signature.length !== 64 || !secp256k1.verify(signature, digest(u), key, { prehash: false, lowS: false })) {
+  const signer = hex.decode(key).subarray(1);
+  if (signature.length !== 64 || !secp256k1.verify(signature, digest(u), signer, { prehash: false, lowS: false })) {
     throw new OtherSignerError();
   }
   return update(u, signature);
@@ -150,20 +161,22 @@ const LATEST_UPDATE = registry(
 const UPDATE_REGISTERED = `0x${hex.encode(name("IntentRegistered(bytes32,string,uint256,uint256,address)"))}`;
 const BTC_USD = `0x${hex.encode(name("BTC/USD"))}`;
 // An Ethereum address is the end of the hash of the uncompressed key.
-const DIA_SIGNER = hex.encode(
-  keccak_256(secp256k1.Point.fromBytes(hex.decode(DIA_KEY).subarray(1)).toBytes(false).subarray(1)).subarray(12),
-);
+const address = (key: string) =>
+  hex.encode(
+    keccak_256(secp256k1.Point.fromBytes(hex.decode(key).subarray(1)).toBytes(false).subarray(1)).subarray(12),
+  );
 
 type Rpc = (method: string, params: unknown[]) => Promise<unknown>;
 
 /**
- * The newest BTC/USD update signed by the key the contracts trust. The registry's own "latest" is
- * whichever signer published last, so when that is another one, this finds the trusted signer's
- * in the registry's recent events and reads it by its hash.
+ * The newest BTC/USD update signed by `key`. The registry's own "latest" is whichever signer
+ * published last, so when that is another one, this finds the trusted signer's in the registry's
+ * recent events and reads it by its hash.
  */
-export async function trustedUpdate(rpc: Rpc): Promise<PriceUpdate> {
+export async function trustedUpdate(rpc: Rpc, key: string = DIA_KEY): Promise<PriceUpdate> {
+  const signer = address(key);
   try {
-    return decodeDia(String(await rpc("eth_call", LATEST_UPDATE)));
+    return decodeDia(String(await rpc("eth_call", LATEST_UPDATE)), key);
   } catch (e) {
     if (!(e instanceof OtherSignerError)) throw e;
   }
@@ -177,10 +190,11 @@ export async function trustedUpdate(rpc: Rpc): Promise<PriceUpdate> {
     },
   ])) as { topics?: string[]; data?: string }[];
   const mine = Array.isArray(events)
-    ? events.filter((e) => e.data?.toLowerCase().endsWith(DIA_SIGNER) && e.topics?.length === 4).at(-1)
+    ? events.filter((e) => e.data?.toLowerCase().endsWith(signer) && e.topics?.length === 4).at(-1)
     : undefined;
   if (!mine?.topics) throw new OtherSignerError();
-  return decodeDia(String(await rpc("eth_call", registry(selector("getIntent(bytes32)") + mine.topics[1].slice(2)))));
+  const update = await rpc("eth_call", registry(selector("getIntent(bytes32)") + mine.topics[1].slice(2)));
+  return decodeDia(String(update), key);
 }
 
 /**
@@ -188,8 +202,13 @@ export async function trustedUpdate(rpc: Rpc): Promise<PriceUpdate> {
  * is asked, it looks for a new update at most once per update DIA publishes, shares it between
  * callers, and backs off when DIA does not answer, serving the last update for as long as the
  * contracts take it.
+ *
+ * `key` picks which of DIA's signers the market trusts; a market on another key is another
+ * market, with other addresses.
  */
-export function dia(request: typeof fetch = (...a) => fetch(...a)): Oracle {
+export function dia(
+  { key = DIA_KEY, request = (...a) => fetch(...a) }: { key?: string; request?: typeof fetch } = {},
+): Oracle {
   let last: PriceUpdate | undefined;
   let fetchedAt = 0;
   let retryAt = 0;
@@ -210,7 +229,7 @@ export function dia(request: typeof fetch = (...a) => fetch(...a)): Oracle {
   };
   const load = async (): Promise<PriceUpdate> => {
     try {
-      last = await trustedUpdate(rpc);
+      last = await trustedUpdate(rpc, key);
       fetchedAt = Date.now();
       failures = 0;
       return last;
@@ -223,7 +242,8 @@ export function dia(request: typeof fetch = (...a) => fetch(...a)): Oracle {
   const usable = () => last !== undefined && seconds() - last.time < STALE_AFTER;
 
   return {
-    key: hex.decode(DIA_KEY),
+    scheme: "dia",
+    key: hex.decode(key),
     async latest() {
       const fresh = last !== undefined && Date.now() - fetchedAt < REUSE_MS;
       if (!fresh && Date.now() >= retryAt) {
@@ -244,10 +264,12 @@ export function dia(request: typeof fetch = (...a) => fetch(...a)): Oracle {
 
 /**
  * A price signer of your own, for a local stack and for tests: it signs whatever price it is
- * given, in DIA's format. A market built on it is only as honest as whoever holds `secret`.
+ * given, in DIA's format, so it exercises the contracts the public networks run. A market built
+ * on it is only as honest as whoever holds `secret`.
  */
 export function localOracle(secret: Uint8Array, price: () => number): Oracle {
   return {
+    scheme: "dia",
     key: concatBytes(Uint8Array.of(0x10), secp256k1.getPublicKey(secret, true)),
     async latest() {
       const now = seconds();
@@ -259,6 +281,28 @@ export function localOracle(secret: Uint8Array, price: () => number): Oracle {
       };
       if (u.raw <= 0n) throw new OracleError("no price is set");
       return update(u, secp256k1.sign(digest(u), secret, { prehash: false }));
+    },
+  };
+}
+
+/**
+ * A price signed with a plain Schnorr key over sha256(price | time): the smallest price check
+ * there is, for whoever runs a signer of their own. `price` returns USD cents, from wherever the
+ * signer gets them.
+ */
+export function schnorrOracle(secret: Uint8Array, price: () => number | Promise<number>): Oracle {
+  return {
+    scheme: "schnorr",
+    key: schnorr.getPublicKey(secret),
+    async latest() {
+      const cents = Math.round(await price());
+      if (!(cents > 0)) throw new OracleError("no price is set");
+      const time = seconds() - CLOCK_MARGIN;
+      const note = new Uint8Array(16);
+      const view = new DataView(note.buffer);
+      view.setBigUint64(0, BigInt(cents), true);
+      view.setBigUint64(8, BigInt(time), true);
+      return { price: cents, time, witness: [schnorr.sign(sha256(note), secret)] };
     },
   };
 }

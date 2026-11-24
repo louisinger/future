@@ -29,9 +29,46 @@ const [offers, positions, price] = await Promise.all([
 ]);
 ```
 
-`NETWORKS` has `mainnet`, `mutinynet` and `regtest`. `dia()` is DIA's signed BTC/USD price, the
-only one the contracts of the public networks accept; `localOracle(secret, price)` signs your
-own, for a local stack and for tests. Amounts are sats, prices USD cents, times unix seconds.
+`NETWORKS` has `mainnet`, `mutinynet` and `regtest`. Amounts are sats, prices USD cents, times
+unix seconds.
+
+## Choose the oracle
+
+The oracle you connect with decides which market you are in. A market's contracts are built
+with one price check and one key, both part of every address, so two oracles never share
+offers or positions, and an open market cannot change oracle.
+
+| | Price check | Key | Prices come from |
+|---|---|---|---|
+| `dia()` | `dia` | DIA's signer | DIA's public RPC |
+| `dia({ key })` | `dia` | another DIA signer | the same, that signer's updates only |
+| `schnorrOracle(secret, price)` | `schnorr` | your x-only key | your function |
+| `localOracle(secret, price)` | `dia` | a test key | your function, in DIA's format |
+
+`dia()` is the market of the app on mainnet and Mutinynet. `localOracle` is for a local stack
+and for tests: it exercises the contracts the public networks run. `schnorrOracle` is for
+whoever signs prices themselves; only the holder of the secret can produce a price, so to let
+others trade and settle, publish what `latest()` returns and have them implement `Oracle` over
+it.
+
+```ts
+import { schnorrOracle } from "@louisinger/future-sdk";
+
+const oracle = schnorrOracle(secret, async () => fetchCents());
+const market = await Engine.connect({ ...NETWORKS.mutinynet, oracle });
+```
+
+An `Oracle` is three things: the `scheme` its contracts run, the `key` they hold, and
+`latest()`, the newest price with the witness that scheme takes. To add a provider:
+
+1. Write its check in `contracts/oracles/<name>.json`: the witness inputs it takes and the
+   script that verifies the price note against `<oraclePk>`. It starts with its inputs on the
+   stack, the first on top, and must consume them and leave nothing.
+2. `UPDATE_VECTORS=1 go test ./...` in `contracts/` writes `contracts/artifacts/<name>/`.
+3. Add the name to `OracleScheme` and its artifacts to `ARTIFACTS` in `src/engine.ts`, and
+   implement `Oracle` for it.
+
+The executor templates are built on the `dia` contracts; a market on another check has none.
 
 ## Offer liquidity
 
@@ -124,14 +161,19 @@ await executor?.delegate(market.refundDelegation(tradeTerms));
 ```
 src/engine.ts       Engine: addresses, market state, every transaction
 src/payoff.ts       the market's arithmetic, offer matching, state validation
-src/oracle.ts       dia(), localOracle(), the signed price a contract takes
+src/oracle.ts       Oracle, dia(), schnorrOracle(), localOracle()
 src/executor.ts     Executor: delegations
 src/networks.ts     NETWORKS
-contracts/          the contracts, their Go tests, the executor templates
+contracts/src/      the four contracts, hand-written Arkade Script, with "$oracle" where a
+                    price is checked
+contracts/oracles/  the price checks that go there: dia, schnorr
+contracts/artifacts/<oracle>/   the contracts built with each check, generated and pinned
+contracts/          their Go tests, the executor templates
 ```
 
-The contract artifacts and executor templates are also exported as files:
-`@louisinger/future-sdk/artifacts/position.json`, `…/templates/register_offer.json`.
+The artifacts, price checks and executor templates are also exported as files:
+`@louisinger/future-sdk/artifacts/dia/position.json`, `…/oracles/dia.json`,
+`…/templates/register_offer.json`.
 
 ## Test
 

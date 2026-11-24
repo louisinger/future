@@ -1,14 +1,17 @@
 package contracts
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -342,7 +345,7 @@ func TestResolve(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s, outs, oracleSig := m.settlement(t, tt.state, tt.price, tt.quoteTime, tt.tamper)
 			if tt.forged {
-				_, oracleSig = signQuote(t, m.traderSk, tt.price, tt.quoteTime)
+				_, oracleSig = m.signQuote(t, m.traderSk, tt.price, tt.quoteTime)
 			}
 			err := s.exec(0, m.position.Covenants["resolve"], oracleSig)
 			if tt.rejected {
@@ -353,6 +356,142 @@ func TestResolve(t *testing.T) {
 			require.Equal(t, tt.wantTrader, paid(outs, tt.state.traderProgram))
 			pot := tt.state.margin + tt.state.houseMargin
 			require.Equal(t, pot-tt.wantTrader, paid(outs, tt.state.lpProgram))
+		})
+	}
+}
+
+// TestArtifacts pins the contracts built for each oracle: every source in src/ with the price
+// check of every file in oracles/ in place of its "$oracle" markers. UPDATE_VECTORS=1 rewrites
+// them.
+func TestArtifacts(t *testing.T) {
+	sources, err := filepath.Glob(filepath.Join("src", "*.json"))
+	require.NoError(t, err)
+	oracles, err := filepath.Glob(filepath.Join("oracles", "*.json"))
+	require.NoError(t, err)
+	require.NotEmpty(t, sources)
+	require.NotEmpty(t, oracles)
+
+	for _, o := range oracles {
+		check, err := os.ReadFile(o)
+		require.NoError(t, err)
+		for _, src := range sources {
+			name := filepath.Join(strings.TrimSuffix(filepath.Base(o), ".json"), filepath.Base(src))
+			t.Run(name, func(t *testing.T) {
+				contract, err := os.ReadFile(src)
+				require.NoError(t, err)
+				got := withOracle(t, contract, check)
+				_, err = artifact.Parse(got)
+				require.NoError(t, err)
+
+				path := filepath.Join("artifacts", name)
+				if os.Getenv("UPDATE_VECTORS") != "" {
+					require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+					require.NoError(t, os.WriteFile(path, got, 0o644))
+				}
+				want, err := os.ReadFile(path)
+				require.NoError(t, err)
+				require.Equal(t, string(want), string(got))
+			})
+		}
+	}
+}
+
+// TestOracles runs a trade's life on each price check the contracts can be built with.
+func TestOracles(t *testing.T) {
+	for _, o := range []oracle{dia, schnorrOracle} {
+		t.Run(o.name, func(t *testing.T) {
+			m := newMarketOn(t, o)
+			now := time.Now().Unix()
+			open := m.defaultFill(now - 5)
+			ended := m.defaultFill(now - 2*86400).state
+			const price = 11_011_000
+
+			tests := []struct {
+				name     string
+				run      func(t *testing.T) error
+				rejected bool
+			}{
+				{
+					name: "opens at a signed price",
+					run: func(t *testing.T) error {
+						errs := m.fill(t, open)
+						return errors.Join(errs["deposit"], errs["offer"])
+					},
+				},
+				{
+					name: "the deposit refuses a price signed by another key",
+					run: func(t *testing.T) error {
+						forged := open
+						forged.forgedQuote = true
+						return m.fill(t, forged)["deposit"]
+					},
+					rejected: true,
+				},
+				{
+					name: "the offer refuses a price signed by another key",
+					run: func(t *testing.T) error {
+						forged := open
+						forged.forgedQuote = true
+						return m.fill(t, forged)["offer"]
+					},
+					rejected: true,
+				},
+				{
+					name: "settles at a signed price",
+					run: func(t *testing.T) error {
+						s, _, witness := m.settlement(t, ended, price, ended.expiry, nil)
+						return s.exec(0, m.position.Covenants["resolve"], witness)
+					},
+				},
+				{
+					name: "refuses to settle at a price signed by another key",
+					run: func(t *testing.T) error {
+						s, _, _ := m.settlement(t, ended, price, ended.expiry, nil)
+						_, forged := m.signQuote(t, m.traderSk, price, ended.expiry)
+						return s.exec(0, m.position.Covenants["resolve"], forged)
+					},
+					rejected: true,
+				},
+				{
+					name: "refuses a price other than the one signed",
+					run: func(t *testing.T) error {
+						s, _, witness := m.settlementAt(
+							t, ended, price, ended.expiry, quoteOf(price+1, ended.expiry),
+						)
+						return s.exec(0, m.position.Covenants["resolve"], witness)
+					},
+					rejected: true,
+				},
+				{
+					name: "refuses a time other than the one signed",
+					run: func(t *testing.T) error {
+						s, _, witness := m.settlementAt(
+							t, ended, price, ended.expiry, quoteOf(price, ended.expiry+1),
+						)
+						return s.exec(0, m.position.Covenants["resolve"], witness)
+					},
+					rejected: true,
+				},
+				{
+					name: "closes on the trader's signature at a signed price",
+					run: func(t *testing.T) error {
+						live := m.defaultFill(now - 3600).state
+						s, _, witness := m.settlement(t, live, price, now-5, nil)
+						sig := signOutpoint(t, m.traderSk, "close", s.coins[0].op)
+						return s.exec(0, m.position.Covenants["close"], append(witness, sig))
+					},
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					err := tt.run(t)
+					if tt.rejected {
+						require.Error(t, err)
+						return
+					}
+					require.NoError(t, err)
+				})
+			}
 		})
 	}
 }
@@ -875,7 +1014,7 @@ func TestTemplates(t *testing.T) {
 		{
 			name: "register_offer",
 			variables: map[string][]byte{
-				"oracle_pk":        oracleKey(m.oracleSk).Raw,
+				"oracle_pk":        m.oracle.key(m.oracleSk).Raw,
 				"position_program": m.position.PkScript[2:],
 				"renewal_window":   scriptNum(renewalWindow),
 				"max_fee":          scriptNum(maxFee),
@@ -908,7 +1047,7 @@ func TestTemplates(t *testing.T) {
 				"deadline":         scriptNum(trade.deadline),
 				"max_carry_bps":    scriptNum(trade.maxCarry),
 				"max_spread_bps":   scriptNum(trade.maxSpread),
-				"oracle_pk":        oracleKey(m.oracleSk).Raw,
+				"oracle_pk":        m.oracle.key(m.oracleSk).Raw,
 				"exit_delay":       scriptNum(exitDelay),
 			},
 			source: newCoin(t, m.tradeDeposit(t, trade).PkScript, trade.margin),
@@ -921,7 +1060,7 @@ func TestTemplates(t *testing.T) {
 		{
 			name: "renew_position",
 			variables: map[string][]byte{
-				"oracle_pk":      oracleKey(m.oracleSk).Raw,
+				"oracle_pk":      m.oracle.key(m.oracleSk).Raw,
 				"renewal_window": scriptNum(renewalWindow),
 				"max_fee":        scriptNum(maxFee),
 			},
@@ -987,7 +1126,44 @@ func TestTemplates(t *testing.T) {
 	}
 }
 
+// oracle is a price check the contracts can be built with, as the tests drive it: its file in
+// oracles/, the key a contract holds for a signer, and the witness that satisfies the check.
+type oracle struct {
+	name string
+	key  func(*btcec.PrivateKey) value
+	sign func(t *testing.T, signer *btcec.PrivateKey, price, quoteTime int64) wire.TxWitness
+}
+
+var (
+	dia = oracle{
+		name: "dia",
+		key:  oracleKey,
+		sign: func(
+			t *testing.T, signer *btcec.PrivateKey, price, quoteTime int64,
+		) wire.TxWitness {
+			raw := new(big.Int).Mul(big.NewInt(price), big.NewInt(1e16))
+			u := diaUpdate{raw: raw, time: quoteTime, nonce: 7, expiry: time.Now().Unix() + 3600}
+			return u.witness(t, signer)
+		},
+	}
+	schnorrOracle = oracle{
+		name: "schnorr",
+		key: func(k *btcec.PrivateKey) value {
+			return value{Type: "bytes", Raw: schnorr.SerializePubKey(k.PubKey())}
+		},
+		sign: func(
+			t *testing.T, signer *btcec.PrivateKey, price, quoteTime int64,
+		) wire.TxWitness {
+			digest := sha256.Sum256(append(le8(price), le8(quoteTime)...))
+			sig, err := schnorr.Sign(signer, digest[:])
+			require.NoError(t, err)
+			return wire.TxWitness{sig.Serialize()}
+		},
+	}
+)
+
 type market struct {
+	oracle                   oracle
 	keys                     template.Keys
 	oracleSk, traderSk, lpSk *btcec.PrivateKey
 	position, offer          *built
@@ -1031,12 +1207,19 @@ type spend struct {
 
 func newMarket(t *testing.T) *market {
 	t.Helper()
+	return newMarketOn(t, dia)
+}
+
+// newMarketOn builds the market's contracts with the price check of an oracle.
+func newMarketOn(t *testing.T, o oracle) *market {
+	t.Helper()
 	key := func() *btcec.PrivateKey {
 		k, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 		return k
 	}
 	m := &market{
+		oracle:        o,
 		keys:          template.Keys{Server: key().PubKey(), Emulator: key().PubKey()},
 		oracleSk:      key(),
 		traderSk:      key(),
@@ -1045,11 +1228,11 @@ func newMarket(t *testing.T) *market {
 		lpProgram:     xonly(key()),
 	}
 	m.position = m.build(t, "position", map[string]value{
-		"oraclePk":      oracleKey(m.oracleSk),
+		"oraclePk":      m.oracle.key(m.oracleSk),
 		"renewalWindow": number(renewalWindow), "maxFee": number(maxFee),
 	})
 	m.offer = m.build(t, "offer", map[string]value{
-		"oraclePk":        oracleKey(m.oracleSk),
+		"oraclePk":        m.oracle.key(m.oracleSk),
 		"positionProgram": bytes32(m.position.PkScript[2:]),
 		"renewalWindow":   number(renewalWindow), "maxFee": number(maxFee),
 	})
@@ -1060,9 +1243,7 @@ func (m *market) build(
 	t *testing.T, name string, args map[string]value,
 ) *built {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join("artifacts", name+".json"))
-	require.NoError(t, err)
-	a, err := artifact.Parse(raw)
+	a, err := artifact.Parse(contractOn(t, m.oracle.name, name))
 	require.NoError(t, err)
 	def := a.Definition()
 	c, err := buildContract(&def, args, m.keys)
@@ -1073,7 +1254,7 @@ func (m *market) build(
 func (m *market) tradeDeposit(t *testing.T, c fillCase) *built {
 	t.Helper()
 	return m.build(t, "trade_deposit", map[string]value{
-		"oraclePk":        oracleKey(m.oracleSk),
+		"oraclePk":        m.oracle.key(m.oracleSk),
 		"positionProgram": bytes32(m.position.PkScript[2:]),
 		"traderPk":        pubkey(m.traderSk),
 		"traderProgram":   bytes32(m.traderProgram),
@@ -1146,7 +1327,7 @@ func (m *market) fillSpend(t *testing.T, c fillCase) (*spend, wire.TxWitness) {
 	if c.forgedQuote {
 		signer = m.traderSk
 	}
-	quote, oracleSig := signQuote(t, signer, c.price, c.quoteTime)
+	quote, oracleSig := m.signQuote(t, signer, c.price, c.quoteTime)
 	packets := []extension.Packet{quote, c.state.packet()}
 	if !c.dropOfferState {
 		packets = append(packets, offer.packet())
@@ -1189,7 +1370,7 @@ func (m *market) settlement(
 	if tamper != nil {
 		tamper(outs)
 	}
-	quote, oracleSig := signQuote(t, m.oracleSk, price, quoteTime)
+	quote, oracleSig := m.signQuote(t, m.oracleSk, price, quoteTime)
 	s := newSpend(
 		t, []coin{newCoin(t, m.position.PkScript, pot, state.packet())}, outs, quote,
 	)
@@ -1347,15 +1528,13 @@ type diaUpdate struct {
 	time, nonce, expiry int64
 }
 
-// signQuote returns the quote packet for a price in cents and the witness of the DIA update that
-// backs it, valid for an hour from now.
-func signQuote(
+// signQuote returns the quote packet for a price in cents and the witness that makes the
+// market's price check take it.
+func (m *market) signQuote(
 	t *testing.T, signer *btcec.PrivateKey, price, quoteTime int64,
 ) (extension.Packet, wire.TxWitness) {
 	t.Helper()
-	raw := new(big.Int).Mul(big.NewInt(price), big.NewInt(1e16))
-	u := diaUpdate{raw: raw, time: quoteTime, nonce: 7, expiry: time.Now().Unix() + 3600}
-	return quoteOf(price, quoteTime), u.witness(t, signer)
+	return quoteOf(price, quoteTime), m.oracle.sign(t, signer, price, quoteTime)
 }
 
 func quoteOf(price, quoteTime int64) extension.Packet {
@@ -1426,6 +1605,62 @@ func signOutpoint(
 	return sig.Serialize()
 }
 
+// contractOn returns the artifact of a contract built with the price check of an oracle.
+func contractOn(t *testing.T, oracle, name string) []byte {
+	t.Helper()
+	contract, err := os.ReadFile(filepath.Join("src", name+".json"))
+	require.NoError(t, err)
+	check, err := os.ReadFile(filepath.Join("oracles", oracle+".json"))
+	require.NoError(t, err)
+	return withOracle(t, contract, check)
+}
+
+// withOracle returns a contract's source with an oracle's inputs and price check in place of
+// each "$oracle" marker.
+func withOracle(t *testing.T, contract, check []byte) []byte {
+	t.Helper()
+	decode := func(raw []byte, into any) {
+		d := json.NewDecoder(bytes.NewReader(raw))
+		d.UseNumber()
+		require.NoError(t, d.Decode(into))
+	}
+	var doc map[string]any
+	decode(contract, &doc)
+	var o struct {
+		Inputs []any `json:"inputs"`
+		Asm    []any `json:"asm"`
+	}
+	decode(check, &o)
+	splice := func(list any, marks func(any) bool, with []any) []any {
+		out := []any{}
+		for _, v := range list.([]any) {
+			if marks(v) {
+				out = append(out, with...)
+				continue
+			}
+			out = append(out, v)
+		}
+		return out
+	}
+	for _, f := range doc["functions"].([]any) {
+		code, ok := f.(map[string]any)["arkade"].(map[string]any)
+		if !ok {
+			continue
+		}
+		code["inputs"] = splice(code["inputs"], func(v any) bool {
+			in, ok := v.(map[string]any)
+			return ok && in["name"] == "$oracle"
+		}, o.Inputs)
+		code["asm"] = splice(code["asm"], func(v any) bool { return v == "$oracle" }, o.Asm)
+	}
+	var out bytes.Buffer
+	e := json.NewEncoder(&out)
+	e.SetEscapeHTML(false)
+	e.SetIndent("", "  ")
+	require.NoError(t, e.Encode(doc))
+	return out.Bytes()
+}
+
 // requireGolden compares got with the pinned testdata file the app reads. UPDATE_VECTORS=1
 // rewrites it.
 func requireGolden(t *testing.T, name string, got map[string]string) {
@@ -1445,12 +1680,11 @@ func requireGolden(t *testing.T, name string, got map[string]string) {
 
 func artifactDocuments(t *testing.T) map[string][]byte {
 	t.Helper()
-	files, err := filepath.Glob(filepath.Join("artifacts", "*.json"))
+	files, err := filepath.Glob(filepath.Join("src", "*.json"))
 	require.NoError(t, err)
 	docs := map[string][]byte{}
 	for _, f := range files {
-		raw, err := os.ReadFile(f)
-		require.NoError(t, err)
+		raw := contractOn(t, dia.name, strings.TrimSuffix(filepath.Base(f), ".json"))
 		a, err := artifact.Parse(raw)
 		require.NoError(t, err)
 		docs[a.ID()] = raw

@@ -1,7 +1,8 @@
-import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { hex } from "@scure/base";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import positionArtifact from "../../contracts/artifacts/position.json";
+import positionArtifact from "../../contracts/artifacts/dia/position.json";
 import {
   DIA_DOMAIN,
   DIA_INTENT,
@@ -10,6 +11,7 @@ import {
   decodeDia,
   dia,
   localOracle,
+  schnorrOracle,
   scriptNum,
 } from "../../src/oracle";
 import sample from "./testdata/dia.json";
@@ -81,7 +83,7 @@ describe("dia", () => {
 
   it("sends one request for many callers and reuses the update until DIA publishes again", async () => {
     const request = vi.fn(async () => answer());
-    const oracle = dia(request);
+    const oracle = dia({ request });
     const [a, b] = await Promise.all([oracle.latest(), oracle.latest()]);
     expect(a).toBe(b);
     await oracle.latest();
@@ -95,7 +97,7 @@ describe("dia", () => {
   it("backs off when refused, serving the last update while the contracts still take it", async () => {
     let refuse = false;
     const request = vi.fn(async () => (refuse ? new Response("", { status: 429 }) : answer()));
-    const oracle = dia(request);
+    const oracle = dia({ request });
     const first = await oracle.latest();
 
     refuse = true;
@@ -116,7 +118,7 @@ describe("dia", () => {
 
   it("reads the trusted signer's newest update when another signed the latest", async () => {
     const request = registry([SIGNER, OTHER, SIGNER, OTHER]);
-    const u = await dia(request).latest();
+    const u = await dia({ request }).latest();
     expect(u.time).toBe(sample.time);
     const calls = request.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as { method: string; params: { data?: string; fromBlock?: string }[] });
     expect(calls.map((c) => c.method)).toEqual(["eth_call", "eth_blockNumber", "eth_getLogs", "eth_call"]);
@@ -126,7 +128,7 @@ describe("dia", () => {
 
   it("has no price while only another signer has published lately, and asks again soon", async () => {
     const request = registry([OTHER, OTHER]);
-    const oracle = dia(request);
+    const oracle = dia({ request });
     await expect(oracle.latest()).rejects.toThrow(OtherSignerError);
     await expect(oracle.latest()).rejects.toThrow(OracleError);
     expect(request).toHaveBeenCalledTimes(3);
@@ -137,7 +139,7 @@ describe("dia", () => {
 
   it("fails without a first answer and waits before asking again", async () => {
     const request = vi.fn(async () => new Response("", { status: 429 }));
-    const oracle = dia(request);
+    const oracle = dia({ request });
     await expect(oracle.latest()).rejects.toThrow("DIA answered 429");
     await expect(oracle.latest()).rejects.toThrow(OracleError);
     expect(request).toHaveBeenCalledTimes(1);
@@ -157,6 +159,32 @@ describe("localOracle", () => {
 
   it("refuses to sign no price", async () => {
     await expect(localOracle(new Uint8Array(32).fill(9), () => 0).latest()).rejects.toThrow(OracleError);
+  });
+});
+
+describe("schnorrOracle", () => {
+  it("signs sha256(price | time) with its key", async () => {
+    const secret = new Uint8Array(32).fill(9);
+    const oracle = schnorrOracle(secret, async () => 6_000_000.4);
+    const u = await oracle.latest();
+    expect(oracle.scheme).toBe("schnorr");
+    expect(u.price).toBe(6_000_000);
+    const note = new Uint8Array(16);
+    new DataView(note.buffer).setBigUint64(0, 6_000_000n, true);
+    new DataView(note.buffer).setBigUint64(8, BigInt(u.time), true);
+    expect(schnorr.verify(u.witness[0], sha256(note), oracle.key)).toBe(true);
+  });
+
+  it("refuses to sign no price", async () => {
+    await expect(schnorrOracle(new Uint8Array(32).fill(9), () => 0).latest()).rejects.toThrow(OracleError);
+  });
+});
+
+describe("dia on another signer", () => {
+  it("refuses the recorded update, signed by the default one", () => {
+    const other = `10${hex.encode(secp256k1.getPublicKey(new Uint8Array(32).fill(7), true))}`;
+    expect(() => decodeDia(sample.result, other)).toThrow(OtherSignerError);
+    expect(hex.encode(dia({ key: other }).key)).toBe(other);
   });
 });
 

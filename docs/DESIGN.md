@@ -29,21 +29,33 @@ ignores packets the contracts could not have written (`validPosition`, `validOff
 
 ## Price
 
-A price is a DIA `OracleUpdate` for `BTC/USD`: an EIP-712 message of DIA's registry on Lasernet
-(chain 1050, `0x5612599CF48032d7428399d5Fcb99eDcc75c06A7`), signed with an Ethereum key. A spend
-that needs a price carries DIA's price (18 decimals), nonce, expiry and signature as witness, and
-packet 34 with the price in cents and DIA's timestamp. The script:
+A spend that needs a price carries packet 34, the price in cents and its time, and a witness
+that proves an oracle attested it. The contracts check the packet's shape and that its time is
+not ahead of the emulator's clock; the proof itself is a module. Each contract source in
+`sdk/contracts/src` has a `$oracle` marker where a price is checked, and a file of
+`sdk/contracts/oracles` gives the witness inputs and the script that go there. The script
+verifies packet 34 against `oraclePk`, a constructor argument of the position, offer and trade
+deposit contracts. So the check and the key are part of every address: another oracle, or
+another key, is another market, and an open market cannot switch.
+
+**`dia`**, the market of the app. A price is a DIA `OracleUpdate` for `BTC/USD`: an EIP-712
+message of DIA's registry on Lasernet (chain 1050,
+`0x5612599CF48032d7428399d5Fcb99eDcc75c06A7`), signed with an Ethereum key. The witness is DIA's
+price (18 decimals), nonce, expiry and signature. The script:
 
 1. refuses an update past DIA's own expiry, an hour after it was signed;
 2. rounds the price to the cent, half up, and requires packet 34 to hold exactly that;
 3. rebuilds the EIP-712 digest with keccak (`OP_DIGEST`) from the witness and the packet's time;
-4. checks the ECDSA signature against the key in its address (`OP_CHECKSIGFROMSTACK`, key
-   prefixed `0x10`);
-5. refuses a time ahead of the emulator's clock.
+4. checks the ECDSA signature against the key (`OP_CHECKSIGFROMSTACK`, key prefixed `0x10`).
 
-The key is a constructor argument of the position, offer and trade deposit contracts, so it is
-part of every address: another key is another market. On regtest the page signs the same
-message with a test key.
+On regtest the page signs the same message with a test key.
+
+**`schnorr`**. A Schnorr signature of an x-only key over `sha256(price | time)`, the sixteen
+bytes of the packet after its version. It has no expiry of its own, so a position settles on
+any price signed since its start, however old: the signer has to be trusted not to leave a
+stale one around.
+
+The executor templates are built on the `dia` contracts only.
 
 ## Payoff
 
@@ -125,14 +137,16 @@ time, which an executor cannot do: a page does those.
 - `sdk/contracts/`: each script executed in the emulator's engine, accepted and refused cases, a
   price sweep checking settlement against the payoff for longs, shorts, fees and near-dust
   pots, and the three executord templates built by the template engine.
-  The price check runs on updates signed like DIA's by a test key: rounding at half a cent,
-  an expired update, another signer, a tampered nonce, a price of zero.
+  The DIA price check runs on updates signed like DIA's by a test key: rounding at half a
+  cent, an expired update, another signer, a tampered nonce, a price of zero. A trade's life
+  runs on each price check, and the generated artifacts are pinned.
 - `sdk/test/unit`: the arithmetic, state validation, byte parity of the SDK's derivation with the
   Go tests' scripts, a recorded DIA response, and the price client's caching and back-off.
 - `sdk/test/e2e`: on regtest, with real arkd and emulator: a market's life, a short to its
   take-profit, a cancelled deposit, the holding fee at a non-round price, address checks, a
   trade opened and closed on DIA's live price and real signature, and executord publishing an
-  offer and refunding a late deposit from delegations alone.
+  offer and refunding a late deposit from delegations alone, and the same market on a Schnorr
+  price signer.
 - By hand in a browser: the page connects on mainnet, mutinynet and regtest and shows DIA's
   price; no horizontal overflow at 320 and 375 pixels on either page.
 - `renew_position` has only been built and executed in the engine.

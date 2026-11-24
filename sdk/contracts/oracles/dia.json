@@ -1,0 +1,26 @@
+{
+  "name": "dia",
+  "about": "A DIA OracleUpdate for BTC/USD: an EIP-712 message of DIA's registry on Lasernet, signed with an Ethereum key. oraclePk is 0x10 followed by the signer's compressed key.",
+  "inputs": [{"name": "rawPrice", "type": "bytes"}, {"name": "nonce", "type": "bytes"}, {"name": "intentExpiry", "type": "bytes"}, {"name": "oracleSig", "type": "signature"}],
+  "asm": [
+    "2", "OP_PICK", "OP_CHECKTIME", "OP_NOT", "OP_VERIFY",
+    "OP_DUP", "100000000", "100000000", "OP_MUL", "OP_DIV",
+    "OP_OVER", "100000000", "100000000", "OP_MUL", "OP_MOD", "5000000000000000", "OP_GREATERTHANOREQUAL",
+    "OP_IF", "OP_1ADD", "OP_ENDIF",
+    "OP_DUP", "0", "OP_GREATERTHAN", "OP_VERIFY",
+    "34", "OP_INSPECTPACKET", "OP_VERIFY", "1", "8", "OP_SUBSTR", "OP_BIN2NUM", "OP_NUMEQUALVERIFY",
+    "32", "OP_NUM2BIN", "OP_REVERSEBYTES",
+    "OP_SWAP", "32", "OP_NUM2BIN", "OP_REVERSEBYTES",
+    "OP_ROT", "32", "OP_NUM2BIN", "OP_REVERSEBYTES",
+    "OP_CAT",
+    "0x24e574fa7512cc24e9109b981256e33759d91bc2ee9b74a2bf633e013c0620b5ef9b6324ed493183babb66ed98fcf36e9bcb0243ae4c5a29fcd99184b08f1899e6bbd6277e1bf288eed5e8d1780f9a50b239e86b153736bceebccf4ea79d90b3000000000000000000000000000000000000000000000000000000000000041a", "OP_SWAP", "OP_CAT",
+    "0xee62665949c883f9e0f6f002eac32e00bd59dfe6c34e92a91c37d6a8322d6489", "OP_CAT",
+    "OP_SWAP", "OP_CAT",
+    "34", "OP_INSPECTPACKET", "OP_VERIFY", "9", "8", "OP_SUBSTR", "OP_BIN2NUM", "32", "OP_NUM2BIN", "OP_REVERSEBYTES", "OP_CAT",
+    "0xf5a695b63ab16fd8278cb1cf7d29f274a9574b64e0b894750e08c990fc8891bc", "OP_CAT",
+    "4", "OP_DIGEST",
+    "0x1901f57d55f057fd4aba6b1a7f8bccb6a3e826cf71fd34971f22a39d7ffd6e620fb3", "OP_SWAP", "OP_CAT",
+    "4", "OP_DIGEST",
+    "<oraclePk>", "OP_CHECKSIGFROMSTACK", "OP_VERIFY"
+  ]
+}

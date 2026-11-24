@@ -16,11 +16,15 @@ import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { base64, hex } from "@scure/base";
 import templateIds from "../contracts/testdata/templates.json";
-import offerArtifact from "../contracts/artifacts/offer.json";
-import offerDepositArtifact from "../contracts/artifacts/offer_deposit.json";
-import positionArtifact from "../contracts/artifacts/position.json";
-import tradeDepositArtifact from "../contracts/artifacts/trade_deposit.json";
-import { type Oracle, type PriceUpdate, scriptNum } from "./oracle.js";
+import diaOffer from "../contracts/artifacts/dia/offer.json";
+import diaOfferDeposit from "../contracts/artifacts/dia/offer_deposit.json";
+import diaPosition from "../contracts/artifacts/dia/position.json";
+import diaTradeDeposit from "../contracts/artifacts/dia/trade_deposit.json";
+import schnorrOffer from "../contracts/artifacts/schnorr/offer.json";
+import schnorrOfferDeposit from "../contracts/artifacts/schnorr/offer_deposit.json";
+import schnorrPosition from "../contracts/artifacts/schnorr/position.json";
+import schnorrTradeDeposit from "../contracts/artifacts/schnorr/trade_deposit.json";
+import { type Oracle, type OracleScheme, type PriceUpdate, scriptNum } from "./oracle.js";
 import {
   type Coin,
   type Offer,
@@ -45,6 +49,17 @@ const POSITION_STATE_SIZE = 161;
 const RENEWAL_WINDOW = 86_400n;
 const MAX_FEE = 1_000n;
 
+/** The market's four contracts, built with the price check of each oracle scheme. */
+export const ARTIFACTS: Record<OracleScheme, Record<"position" | "offer" | "offerDeposit" | "tradeDeposit", unknown>> = {
+  dia: { position: diaPosition, offer: diaOffer, offerDeposit: diaOfferDeposit, tradeDeposit: diaTradeDeposit },
+  schnorr: {
+    position: schnorrPosition,
+    offer: schnorrOffer,
+    offerDeposit: schnorrOfferDeposit,
+    tradeDeposit: schnorrTradeDeposit,
+  },
+};
+
 type Contract = arkade.ArkadeContract;
 
 export interface Account {
@@ -57,7 +72,10 @@ export interface Deposit {
   script: string;
 }
 
-/** The ids of the market's executor templates, as an executor names them. */
+/**
+ * The ids of the market's executor templates, as an executor names them. They are built on the
+ * DIA contracts: a market on another oracle scheme has none.
+ */
 export const TEMPLATES: { register_offer: string; refund_trade: string; renew_position: string } = templateIds;
 
 /** What an executor needs to run one of the market's templates for an address. */
@@ -117,6 +135,7 @@ export class Engine {
   readonly network: string;
   readonly dust: number;
   private readonly exitDelay: bigint;
+  private readonly artifacts: (typeof ARTIFACTS)[OracleScheme];
   private readonly position: Contract;
   private readonly offer: Contract;
 
@@ -132,8 +151,9 @@ export class Engine {
     const delay = info.exitDelaySeconds;
     this.exitDelay = big(delay >= 512 ? (1 << 22) | Math.floor(delay / 512) : delay);
     const market = { oraclePk: oracle.key, renewalWindow: RENEWAL_WINDOW, maxFee: MAX_FEE };
-    this.position = client.contract(load(positionArtifact), market);
-    this.offer = client.contract(load(offerArtifact), { ...market, positionProgram: program(this.position.pkScript) });
+    this.artifacts = ARTIFACTS[oracle.scheme];
+    this.position = client.contract(load(this.artifacts.position), market);
+    this.offer = client.contract(load(this.artifacts.offer), { ...market, positionProgram: program(this.position.pkScript) });
   }
 
   /**
@@ -275,6 +295,7 @@ export class Engine {
 
   /** What an executor needs to turn a payment to the offer deposit of terms into an offer. */
   offerDelegation(t: OfferTerms): Delegation {
+    this.requireTemplates();
     return {
       template: templateIds.register_offer,
       variables: {
@@ -295,6 +316,7 @@ export class Engine {
 
   /** What an executor needs to refund the trade deposit of terms once its deadline has passed. */
   refundDelegation(t: TradeTerms): Delegation {
+    this.requireTemplates();
     return {
       template: templateIds.refund_trade,
       variables: {
@@ -435,7 +457,7 @@ export class Engine {
   }
 
   private offerDepositContract(t: OfferTerms): Contract {
-    return this.client.contract(load(offerDepositArtifact), {
+    return this.client.contract(load(this.artifacts.offerDeposit), {
       offerProgram: program(this.offer.pkScript),
       lpPk: xonly(t.lpPk),
       lpProgram: hex.decode(t.lpProgram),
@@ -448,7 +470,7 @@ export class Engine {
   }
 
   private tradeDepositContract(t: TradeTerms): Contract {
-    return this.client.contract(load(tradeDepositArtifact), {
+    return this.client.contract(load(this.artifacts.tradeDeposit), {
       oraclePk: this.oracle.key,
       positionProgram: program(this.position.pkScript),
       traderPk: xonly(t.traderPk),
@@ -463,6 +485,10 @@ export class Engine {
       maxSpreadBps: big(t.maxSpreadBps),
       exitDelay: this.exitDelay,
     });
+  }
+
+  private requireTemplates(): void {
+    if (this.oracle.scheme !== "dia") throw new Error("there are no executor templates for this oracle");
   }
 
   private async unspent(script: string): Promise<Coin> {

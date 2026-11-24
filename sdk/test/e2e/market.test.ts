@@ -8,7 +8,7 @@ import { hex } from "@scure/base";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Engine, ForeignAddressError, NoCoinError, newAccount, type Account } from "../../src/engine";
 import { Executor } from "../../src/executor";
-import { type Oracle, dia, localOracle, trustedUpdate } from "../../src/oracle";
+import { type Oracle, dia, localOracle, schnorrOracle, trustedUpdate } from "../../src/oracle";
 import { NoOfferError, levels, type OfferTerms, type Position, type Quote, type TradeTerms } from "../../src/payoff";
 
 const ARK_URL = "http://localhost:7070";
@@ -46,9 +46,11 @@ class Desk {
     readonly traderPayout: string,
   ) {}
 
-  static async open(oracle?: Oracle): Promise<Desk> {
+  static async open(make?: (price: () => number) => Oracle): Promise<Desk> {
     const quote = { price: 0 };
-    oracle ??= localOracle(secp256k1.utils.randomSecretKey(), () => quote.price);
+    const oracle = make
+      ? make(() => quote.price)
+      : localOracle(secp256k1.utils.randomSecretKey(), () => quote.price);
     const engine = await Engine.connect({ arkUrl: ARK_URL, emulatorUrl: EMULATOR_URL, oracle });
     const program = () => hex.encode(schnorr.getPublicKey(schnorr.utils.randomSecretKey()));
     return new Desk(engine, quote, newAccount(), newAccount(), program(), program());
@@ -219,6 +221,27 @@ describe("a market", () => {
     });
   }, 180_000);
 
+  it("runs the same market on a Schnorr price signer", async () => {
+    const d = await Desk.open((price) => schnorrOracle(schnorr.utils.randomSecretKey(), price));
+    expect(() => d.engine.offerDelegation(d.offerTerms(10))).toThrow("no executor templates");
+    await d.offer(10);
+
+    const terms = d.tradeTerms(0, 2, 5_000);
+    pay(d.engine.tradeDeposit(terms).address);
+    const quote = await eventually(() => d.fill(terms, 10_000_000));
+    expect(quote.entryPrice).toBe(10_010_000);
+    const first = await d.position();
+    await d.close(first, 10_500_000, d.trader.key);
+    await eventually(async () => expect(await d.paid(d.traderPayout)).toBe(10_933));
+
+    pay(d.engine.tradeDeposit(terms).address);
+    await eventually(() => d.fill(terms, 10_000_000));
+    const second = await d.position();
+    await expect(d.resolve(second, 9_900_000)).rejects.toThrow("failed to execute arkade script");
+    await d.resolve(second, 6_000_000);
+    await eventually(async () => expect(await d.paid(d.lpPayout)).toBe(4_067 + DEPOSIT + 5_000));
+  }, 180_000);
+
   it("finds the trusted signer's update in DIA's events when the registry's latest is not its own", async () => {
     // the registry's latest answer is altered, as if the other signer had published last; the
     // events and the update they lead to are DIA's own
@@ -243,7 +266,7 @@ describe("a market", () => {
   }, 60_000);
 
   it("opens and closes a trade on DIA's live signed price", async () => {
-    const d = await Desk.open(dia());
+    const d = await Desk.open(() => dia());
     await d.offer(10);
     const { price } = await eventually(() => d.engine.oracle.latest(), 60);
 

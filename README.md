@@ -38,6 +38,10 @@ Each network is a separate market with its own key and addresses in the browser.
 
 ### The price
 
+The price check is a module of the contracts and the oracle a parameter of the SDK: see
+[Choose the oracle](sdk/README.md#choose-the-oracle). The app uses DIA on mainnet and
+Mutinynet, chosen in one line of `src/main.ts`.
+
 `sdk/src/oracle.ts` reads DIA's latest signed BTC/USD update from its public RPC,
 `https://rpc.diadata.org`, with no account and no key. Each browser asks for itself, at most
 once per 20 seconds however many trades are open (DIA publishes about every 25) with one to
@@ -77,7 +81,9 @@ src/how.ts               the reference page
 src/explain.ts           failures as sentences
 src/qr.ts                QR codes for deposit addresses
 sdk/src/                 the client: addresses, market state, every transaction, prices, executor
-sdk/contracts/artifacts/ the four contracts, hand-written Arkade Script
+sdk/contracts/src/       the four contracts, hand-written Arkade Script
+sdk/contracts/oracles/   the price checks they can be built with: dia, schnorr
+sdk/contracts/artifacts/ the contracts built with each price check, generated
 sdk/contracts/           their tests, a Go module that runs each script in the emulator's engine
 sdk/contracts/executor-templates/   templates executord can run by itself: register, refund, renew
 sdk/scripts/             register the templates on an executor, print DIA's current signer
@@ -97,7 +103,8 @@ pnpm test:e2e                  # full market on a local regtest stack
   contract's output script; `sdk/test/unit/vectors.test.ts` checks the SDK derives the same bytes,
   so the scripts the Go tests execute are the ones the page deploys. Rewrite it, and the
   template ids in `templates.json`, with `UPDATE_VECTORS=1 go test ./...` after changing a
-  contract; a template names its contracts by id, printed by the failing test.
+  contract or a price check, which also regenerates `artifacts/`; a template names its
+  contracts by id, printed by the failing test.
 - `pnpm test:e2e` expects arkd and the emulator on localhost and a container named `arkd`
   whose CLI wallet it uses as a faucet. executor's `make regtest-up` provides all three. One
   Two scenarios read DIA's live prices, so they need the internet. The executor scenario runs when

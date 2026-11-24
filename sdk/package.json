@@ -15,12 +15,15 @@
       "default": "./dist/index.js"
     },
     "./artifacts/*": "./contracts/artifacts/*",
-    "./templates/*": "./contracts/executor-templates/*"
+    "./templates/*": "./contracts/executor-templates/*",
+    "./oracles/*": "./contracts/oracles/*"
   },
   "files": [
     "dist",
     "contracts/artifacts",
-    "contracts/executor-templates"
+    "contracts/executor-templates",
+    "contracts/oracles",
+    "contracts/src"
   ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
