@@ -1,0 +1,61 @@
+{
+  "format": "template/v1",
+  "type": "virtual",
+  "variables": {
+    "position_program": "bytes32",
+    "trader_pk": "pubkey",
+    "trader_program": "bytes32",
+    "side": "int",
+    "leverage": "int",
+    "cap_bps": "int",
+    "limit_price": "int",
+    "duration": "int",
+    "deadline": "int",
+    "exit_delay": "int",
+    "max_carry_bps": "int",
+    "oracle_pk": "bytes",
+    "max_spread_bps": "int"
+  },
+  "inputs": [
+    {
+      "name": "deposit",
+      "contract": {
+        "definition": {
+          "artifact": "020411f9cb69c1e6855694236a050551fa83d8162b5a0e6ce7d4d5456f8c5710"
+        },
+        "arguments": {
+          "positionProgram": "<position_program>",
+          "traderPk": "<trader_pk>",
+          "traderProgram": "<trader_program>",
+          "side": "<side>",
+          "leverage": "<leverage>",
+          "capBps": "<cap_bps>",
+          "limitPrice": "<limit_price>",
+          "duration": "<duration>",
+          "deadline": "<deadline>",
+          "exitDelay": "<exit_delay>",
+          "maxCarryBps": "<max_carry_bps>",
+          "oraclePk": "<oracle_pk>",
+          "maxSpreadBps": "<max_spread_bps>"
+        }
+      },
+      "spend": {
+        "function": "refund",
+        "leaf": "refund"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "refund",
+      "index": 0,
+      "value": {
+        "from": "deposit"
+      },
+      "locking": "5120<trader_program>"
+    }
+  ],
+  "packets": {
+    "output_index": 1
+  }
+}

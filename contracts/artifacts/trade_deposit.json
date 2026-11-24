@@ -1,0 +1,163 @@
+{
+  "contractName": "FutureTradeDeposit",
+  "constructorInputs": [
+    {"name": "oraclePk", "type": "bytes"},
+    {"name": "positionProgram", "type": "bytes32"},
+    {"name": "traderPk", "type": "pubkey"},
+    {"name": "traderProgram", "type": "bytes32"},
+    {"name": "side", "type": "int"},
+    {"name": "leverage", "type": "int"},
+    {"name": "capBps", "type": "int"},
+    {"name": "limitPrice", "type": "int"},
+    {"name": "duration", "type": "int"},
+    {"name": "deadline", "type": "int"},
+    {"name": "maxCarryBps", "type": "int"},
+    {"name": "maxSpreadBps", "type": "int"},
+    {"name": "exitDelay", "type": "int"}
+  ],
+  "structs": [],
+  "functions": [
+    {
+      "name": "fill",
+      "arkade": {
+        "inputs": [{"name": "rawPrice", "type": "bytes"}, {"name": "nonce", "type": "bytes"}, {"name": "intentExpiry", "type": "bytes"}, {"name": "oracleSig", "type": "signature"}],
+        "asm": [
+          "OP_PUSHCURRENTINPUTINDEX", "0", "OP_NUMEQUALVERIFY",
+          "34", "OP_INSPECTPACKET", "OP_VERIFY", "OP_SIZE", "17", "OP_NUMEQUALVERIFY", "0", "1", "OP_SUBSTR", "0x01", "OP_EQUALVERIFY",
+          "2", "OP_PICK", "OP_CHECKTIME", "OP_NOT", "OP_VERIFY",
+          "OP_DUP", "100000000", "100000000", "OP_MUL", "OP_DIV",
+          "OP_OVER", "100000000", "100000000", "OP_MUL", "OP_MOD", "5000000000000000", "OP_GREATERTHANOREQUAL",
+          "OP_IF", "OP_1ADD", "OP_ENDIF",
+          "OP_DUP", "0", "OP_GREATERTHAN", "OP_VERIFY",
+          "34", "OP_INSPECTPACKET", "OP_VERIFY", "1", "8", "OP_SUBSTR", "OP_BIN2NUM", "OP_NUMEQUALVERIFY",
+          "32", "OP_NUM2BIN", "OP_REVERSEBYTES",
+          "OP_SWAP", "32", "OP_NUM2BIN", "OP_REVERSEBYTES",
+          "OP_ROT", "32", "OP_NUM2BIN", "OP_REVERSEBYTES",
+          "OP_CAT",
+          "0x24e574fa7512cc24e9109b981256e33759d91bc2ee9b74a2bf633e013c0620b5ef9b6324ed493183babb66ed98fcf36e9bcb0243ae4c5a29fcd99184b08f1899e6bbd6277e1bf288eed5e8d1780f9a50b239e86b153736bceebccf4ea79d90b3000000000000000000000000000000000000000000000000000000000000041a", "OP_SWAP", "OP_CAT",
+          "0xee62665949c883f9e0f6f002eac32e00bd59dfe6c34e92a91c37d6a8322d6489", "OP_CAT",
+          "OP_SWAP", "OP_CAT",
+          "34", "OP_INSPECTPACKET", "OP_VERIFY", "9", "8", "OP_SUBSTR", "OP_BIN2NUM", "32", "OP_NUM2BIN", "OP_REVERSEBYTES", "OP_CAT",
+          "0xf5a695b63ab16fd8278cb1cf7d29f274a9574b64e0b894750e08c990fc8891bc", "OP_CAT",
+          "4", "OP_DIGEST",
+          "0x1901f57d55f057fd4aba6b1a7f8bccb6a3e826cf71fd34971f22a39d7ffd6e620fb3", "OP_SWAP", "OP_CAT",
+          "4", "OP_DIGEST",
+          "<oraclePk>", "OP_CHECKSIGFROMSTACK", "OP_VERIFY",
+          "34", "OP_INSPECTPACKET", "OP_VERIFY", "9", "8", "OP_SUBSTR", "OP_BIN2NUM", "OP_CHECKTIME", "OP_VERIFY",
+          "<deadline>", "OP_CHECKTIME", "OP_NOT", "OP_VERIFY",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "OP_SIZE", "161", "OP_NUMEQUALVERIFY", "0", "1", "OP_SUBSTR", "0x01", "OP_EQUALVERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "57", "32", "OP_SUBSTR", "<traderPk>", "OP_EQUALVERIFY",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "89", "32", "OP_SUBSTR", "<traderProgram>", "OP_EQUALVERIFY",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "1", "8", "OP_SUBSTR", "OP_BIN2NUM", "<side>", "OP_NUMEQUALVERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "25", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTVALUE", "OP_NUMEQUALVERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "17", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "25", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "<leverage>", "OP_MUL", "OP_NUMEQUALVERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "33", "8", "OP_SUBSTR", "OP_BIN2NUM", "10000", "OP_MUL",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "25", "8", "OP_SUBSTR", "OP_BIN2NUM", "<capBps>", "OP_MUL",
+          "OP_GREATERTHANOREQUAL", "OP_VERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "49", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "41", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "<duration>", "OP_ADD", "OP_NUMEQUALVERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "9", "8", "OP_SUBSTR", "OP_BIN2NUM", "<limitPrice>",
+          "<side>", "OP_IF", "OP_GREATERTHANOREQUAL", "OP_ELSE", "OP_LESSTHANOREQUAL", "OP_ENDIF", "OP_VERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "41", "8", "OP_SUBSTR", "OP_BIN2NUM", "OP_CHECKTIME", "OP_VERIFY",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "41", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "120", "OP_ADD", "OP_CHECKTIME", "OP_NOT", "OP_VERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "153", "8", "OP_SUBSTR", "OP_BIN2NUM", "<maxCarryBps>", "OP_LESSTHANOREQUAL", "OP_VERIFY",
+
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "41", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "34", "OP_INSPECTPACKET", "OP_VERIFY", "9", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "OP_NUMEQUALVERIFY",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "9", "8", "OP_SUBSTR", "OP_BIN2NUM", "10000", "OP_MUL",
+          "34", "OP_INSPECTPACKET", "OP_VERIFY", "1", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "10000", "<maxSpreadBps>",
+          "<side>", "OP_IF", "OP_SUB", "OP_MUL", "OP_GREATERTHANOREQUAL", "OP_ELSE", "OP_ADD", "OP_MUL", "OP_LESSTHANOREQUAL", "OP_ENDIF", "OP_VERIFY",
+
+          "0", "OP_INSPECTOUTPUTSCRIPTPUBKEY", "1", "OP_NUMEQUALVERIFY", "<positionProgram>", "OP_EQUALVERIFY",
+          "0", "OP_INSPECTOUTPUTVALUE",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "25", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "65", "OP_INSPECTPACKET", "OP_VERIFY", "33", "8", "OP_SUBSTR", "OP_BIN2NUM",
+          "OP_ADD", "OP_GREATERTHANOREQUAL"
+        ]
+      },
+      "leaves": [
+        {
+          "name": "fill",
+          "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:fill>", "OP_CHECKSIG"],
+          "witness": [
+            {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+            {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "refund",
+      "arkade": {
+        "inputs": [],
+        "asm": [
+          "OP_INSPECTNUMINPUTS", "1", "OP_NUMEQUALVERIFY",
+          "<deadline>", "OP_CHECKTIME", "OP_VERIFY",
+          "0", "OP_INSPECTOUTPUTSCRIPTPUBKEY", "1", "OP_NUMEQUALVERIFY", "<traderProgram>", "OP_EQUALVERIFY",
+          "0", "OP_INSPECTOUTPUTVALUE", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTVALUE", "OP_GREATERTHANOREQUAL"
+        ]
+      },
+      "leaves": [
+        {
+          "name": "refund",
+          "asm": [
+            "<deadline>", "OP_CHECKLOCKTIMEVERIFY", "OP_DROP",
+            "<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:refund>", "OP_CHECKSIG"
+          ],
+          "witness": [
+            {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+            {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "cancel",
+      "arkade": {
+        "inputs": [{"name": "traderSig", "type": "signature"}],
+        "asm": [
+          "OP_INSPECTNUMINPUTS", "1", "OP_NUMEQUALVERIFY",
+          "0x63616e63656c", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTOUTPOINT", "4", "OP_NUM2BIN", "OP_CAT", "OP_CAT", "OP_SHA256",
+          "<traderPk>", "OP_CHECKSIGFROMSTACK", "OP_VERIFY",
+          "0", "OP_INSPECTOUTPUTSCRIPTPUBKEY", "1", "OP_NUMEQUALVERIFY", "<traderProgram>", "OP_EQUALVERIFY",
+          "0", "OP_INSPECTOUTPUTVALUE", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTVALUE", "OP_GREATERTHANOREQUAL"
+        ]
+      },
+      "leaves": [
+        {
+          "name": "cancel",
+          "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:cancel>", "OP_CHECKSIG"],
+          "witness": [
+            {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+            {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "exit",
+      "leaves": [
+        {
+          "name": "exit",
+          "asm": ["<exitDelay>", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<traderPk>", "OP_CHECKSIG"],
+          "witness": [{"name": "traderSig", "type": "signature", "encoding": "schnorr-64"}]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Arkade futures works</title>
+</head>
+<body class="how">
+<header class="top">
+  <a class="brand" href="./" id="back-brand">Arkade futures</a>
+  <a class="chip" href="./" id="back">Back to trading</a>
+</header>
+
+<main class="doc">
+  <section class="intro">
+    <h1>A trade is a coin with rules</h1>
+    <p>There is no exchange account here and nobody holds your money. The market is four
+      contracts and eleven kinds of transaction. A contract is an address: what is written in
+      it decides the only transactions that can ever spend a coin sent there. Arkade checks
+      those rules before it signs anything.</p>
+    <nav class="toc" aria-label="On this page">
+      <a class="chip" href="#contracts-h">The four contracts</a>
+      <a class="chip" href="#txs-h">Every transaction</a>
+      <a class="chip" href="#payoff-h">The payoff</a>
+      <a class="chip" href="#notes-h">Where terms are written</a>
+      <a class="chip" href="#trust-h">What you trust</a>
+    </nav>
+  </section>
+
+  <section class="panel">
+    <h2 id="contracts-h">The four contracts</h2>
+    <p class="lede">Two are personal deposit addresses, made from your own terms. Two are shared:
+      every offer lives at one address and every position at another, which is how anyone can
+      list the whole market. Each function below is one way a coin at that address can be spent;
+      follow it to see the transaction.</p>
+    <div class="contracts" id="contracts"></div>
+  </section>
+
+  <section class="panel">
+    <h2 id="txs-h">Every transaction</h2>
+    <p class="lede">Coins on the left are spent, coins on the right are created. Each spent coin
+      names the contract function that allows it. A function that nobody has to sign can be
+      submitted by anyone: your page, the other side, a stranger.</p>
+    <div class="legend" aria-hidden="true">
+      <span><i class="k-wallet"></i>A wallet's own coin</span>
+      <span><i class="k-contract"></i>A coin held by a contract</span>
+      <span><i class="k-payout"></i>A payout to someone's address</span>
+    </div>
+    <div id="txs"></div>
+  </section>
+
+  <section class="panel">
+    <h2 id="payoff-h">The payoff</h2>
+    <p class="lede">A position holds both margins. Its <code>resolve</code> and <code>close</code>
+      functions compute how that pot is split from a signed price and the time. Move both to see
+      exactly what they would pay.</p>
+    <div class="seg side" role="group" aria-label="Direction">
+      <button class="is-long" id="demo-long" aria-pressed="true">Long 10×</button>
+      <button class="is-short" id="demo-short" aria-pressed="false">Short 10×</button>
+    </div>
+    <div class="field">
+      <label for="demo-price">Bitcoin price: <b class="num" id="demo-price-out"></b></label>
+      <input id="demo-price" type="range" min="30000" max="90000" step="100" value="60000">
+    </div>
+    <div class="field">
+      <label for="demo-days">Held for: <b class="num" id="demo-days-out"></b></label>
+      <input id="demo-days" type="range" min="0" max="7" step="0.25" value="0">
+    </div>
+    <div id="demo-rail"></div>
+    <div class="pot" id="demo-pot" role="img" aria-label="How the pot is split">
+      <div class="pot-trader" id="pot-trader"></div>
+      <div class="pot-provider" id="pot-provider"></div>
+    </div>
+    <dl class="facts" id="demo-facts"></dl>
+    <p class="hint" id="demo-verdict"></p>
+    <ul class="plain">
+      <li>profit or loss = size × (price − entry) ÷ price, reversed for a short</li>
+      <li>holding fee = size × daily rate × days held, never past the end date</li>
+      <li>provider's share = provider's margin − trader's profit + holding fee, kept between 0 and the whole pot</li>
+      <li>trader's share = the rest; a share of 330 sats or less is folded into the other</li>
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2 id="notes-h">Where the terms are written</h2>
+    <p class="lede">A deposit's terms are part of its address. Offers and positions share their
+      address, so their terms travel in a short note attached to the transaction that created
+      the coin. A contract reads its own note when it is spent, and only lets a new coin be
+      created if the new note is exactly what its rules compute.</p>
+    <div class="notes">
+      <div>
+        <h3>Price note (34)</h3>
+        <ul class="plain"><li>Price in USD cents and the time it was signed</li><li>Must be the price DIA signed, rounded to the cent</li></ul>
+      </div>
+      <div>
+        <h3>Offer note (64)</h3>
+        <ul class="plain">
+          <li>The provider's key and payout address</li>
+          <li>Spread, holding fee, highest leverage, longest trade</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Position note (65)</h3>
+        <ul class="plain">
+          <li>Long or short, entry price, size</li>
+          <li>The trader's margin and the provider's margin</li>
+          <li>Start and end dates, the holding fee</li>
+          <li>The trader's key and both payout addresses</li>
+        </ul>
+      </div>
+    </div>
+    <p class="hint">Someone can attach a made-up note to a coin they fund themselves. A position
+      only ever pays out its own sats, so that can only misdirect the forger's money, and this
+      page ignores notes the contracts could not have written.</p>
+  </section>
+
+  <section class="panel">
+    <h2 id="trust-h">What you are trusting</h2>
+    <ul class="plain">
+      <li><b>The Arkade operator.</b> It runs the rules and co-signs every move. It cannot change
+        where a coin may go, but if it disappears, offers and positions have no way out on their
+        own. Deposits do: their owner can exit on-chain.</li>
+      <li><b>The price.</b> Every price is a BTC/USD update signed by
+        <a href="https://www.diadata.org/docs" target="_blank" rel="noopener">DIA</a>, an oracle
+        network. The contracts check DIA's signature themselves, so no page and no server can
+        make one up. DIA's key could: whoever holds it decides every settlement. On a local
+        test stack the page signs prices with a test key instead.</li>
+      <li><b>Someone showing up.</b> Rules say what may happen, not that it does. A trade opens or
+        settles when someone submits the transaction.</li>
+      <li><b>Time.</b> Coins expire. A coin made by a transaction expires with the earliest of the
+        coins it spent, so the other side's coin can shorten yours. Renewal exists in the
+        contracts but nothing runs it for you yet.</li>
+    </ul>
+  </section>
+</main>
+<script type="module" src="/src/how.ts"></script>
+</body>
+</html>

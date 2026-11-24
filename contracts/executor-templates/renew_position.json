@@ -1,0 +1,64 @@
+{
+  "format": "template/v1",
+  "type": "proof",
+  "variables": {
+    "oracle_pk": "bytes",
+    "renewal_window": "int",
+    "max_fee": "int"
+  },
+  "inputs": [
+    {
+      "name": "position",
+      "contract": {
+        "definition": {
+          "artifact": "5b9248d5f815957ebdade813e7a1a7a946b3f53d8327ac72447829c3f1c363f6"
+        },
+        "arguments": {
+          "oraclePk": "<oracle_pk>",
+          "renewalWindow": "<renewal_window>",
+          "maxFee": "<max_fee>"
+        }
+      },
+      "spend": {
+        "function": "renew",
+        "leaf": "renew"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "renewed",
+      "value": {
+        "from": "position"
+      },
+      "locking": {
+        "from": "position"
+      },
+      "assets": [
+        {
+          "from": "position"
+        }
+      ]
+    }
+  ],
+  "fees": {
+    "from": "position",
+    "max": "<max_fee>"
+  },
+  "packets": {
+    "rules": [
+      {
+        "type": 65,
+        "action": "copy",
+        "from": "position"
+      }
+    ]
+  },
+  "delegation": {
+    "schedule": {
+      "position": {
+        "before_expiry_seconds": "<renewal_window>"
+      }
+    }
+  }
+}

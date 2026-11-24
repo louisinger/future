@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arkade futures</title>
+</head>
+<body>
+
+<div id="boot">
+  <h1>Arkade futures</h1>
+  <p class="muted" id="boot-msg">Connecting to Arkade…</p>
+</div>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="brand">Arkade futures</div>
+    <div class="ticker">
+      <span class="muted">Bitcoin</span>
+      <b class="num" id="price">–</b>
+      <a class="chip" id="oracle-link" target="_blank" rel="noopener" title="The contracts settle on BTC/USD prices signed by DIA">Price by DIA</a>
+      <button class="chip warn" id="oracle-toggle" aria-expanded="false" aria-controls="oracle" hidden>Test price</button>
+    </div>
+    <a class="quiet" id="how-link" href="./how.html">How it works</a>
+    <select class="chip" id="network" aria-label="Network"></select>
+  </header>
+
+  <div class="drawer" id="oracle" hidden>
+    <div class="inner">
+      <p><b>On a local stack you set the price.</b> It is signed by a test key that ships inside this page, in the format of DIA's prices. Mainnet and Mutinynet only take prices signed by DIA.</p>
+      <div class="controls">
+        <label for="manual">Set the price to try a liquidation or a take-profit</label>
+        <input id="manual" type="number" min="1" inputmode="decimal">
+        <button class="btn small" data-nudge="-10">−10%</button>
+        <button class="btn small" data-nudge="-2">−2%</button>
+        <button class="btn small" data-nudge="2">+2%</button>
+        <button class="btn small" data-nudge="10">+10%</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="drawer" id="mainnet-warning" hidden>
+    <div class="inner"><p><b>This is real bitcoin.</b> These contracts are new and have not been audited. An offer or a position cannot leave Arkade on its own if the operator stops, and its coin must be settled before it expires. Send only what you can afford to lose, or switch to Mutinynet to try it with test coins.</p></div>
+  </div>
+
+  <div class="drawer" id="storage-warning" hidden>
+    <div class="inner"><p><b>This browser is not saving anything for this page.</b> Your key and your addresses exist only in this tab: back them up under “Your key” before you pay anything, or you will not be able to close or withdraw after a reload.</p></div>
+  </div>
+
+  <main class="wrap">
+    <div class="stack">
+      <section class="panel">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tab-trade" aria-selected="true" aria-controls="view-trade">Trade</button>
+          <button role="tab" id="tab-earn" aria-selected="false" aria-controls="view-earn">Earn</button>
+        </div>
+
+        <div id="view-trade" role="tabpanel" aria-labelledby="tab-trade">
+          <div class="seg side" role="group" aria-label="Direction">
+            <button class="is-long" id="side-long" aria-pressed="true">Long</button>
+            <button class="is-short" id="side-short" aria-pressed="false">Short</button>
+          </div>
+          <div class="field">
+            <label for="margin">Margin you plan to send (sats)</label>
+            <input id="margin" type="number" min="5000" step="1000" value="10000" inputmode="numeric">
+          </div>
+          <div class="field">
+            <span class="label" id="lev-label">Leverage</span>
+            <div class="seg" id="leverage" role="group" aria-labelledby="lev-label"></div>
+          </div>
+          <div class="field">
+            <span class="label" id="cap-label">Take profit at</span>
+            <div class="seg" id="cap" role="group" aria-labelledby="cap-label"></div>
+          </div>
+          <div class="pair">
+            <div class="field"><label for="duration">Closes itself after</label><select id="duration"></select></div>
+            <div class="field"><label for="slippage">Price may move by</label>
+              <select id="slippage"><option value="50">0.5%</option><option value="100" selected>1%</option><option value="300">3%</option></select></div>
+          </div>
+
+          <div id="quote"></div>
+
+          <div class="field">
+            <label for="payout">Your Arkade address, for payouts and refunds</label>
+            <input id="payout" class="payout" placeholder="tark1…" spellcheck="false" autocomplete="off">
+            <span class="hint" id="payout-hint"></span>
+          </div>
+          <button class="btn primary" id="create-trade" disabled>Get a deposit address</button>
+          <p class="hint">Nothing is taken until you pay the address. Whatever you send becomes your margin.</p>
+        </div>
+
+        <div id="view-earn" role="tabpanel" aria-labelledby="tab-earn" hidden>
+          <p class="lede">Offer bitcoin as liquidity. Traders open positions against it, and you are the other side of each one: you earn the spread, a holding fee for as long as a trade stays open, and the margins of liquidated trades. You pay the profits of winning ones.</p>
+          <div class="pair">
+            <div class="field"><label for="spread">Your fee (spread, %)</label><input id="spread" type="number" min="0" max="5" step="0.05" value="0.10" inputmode="decimal"></div>
+            <div class="field"><label for="maxlev">Highest leverage</label><select id="maxlev"><option>5</option><option>10</option><option>25</option><option selected>50</option></select></div>
+          </div>
+          <div class="pair">
+            <div class="field"><label for="carry">Holding fee (% of size per day)</label><input id="carry" type="number" min="0" max="5" step="0.01" value="0.05" inputmode="decimal"></div>
+            <div class="field"><label for="maxdur">Longest trade you accept</label><select id="maxdur"></select></div>
+          </div>
+          <div class="field">
+            <label for="payout2">Your Arkade address, for payouts and withdrawals</label>
+            <input id="payout2" class="payout" placeholder="tark1…" spellcheck="false" autocomplete="off">
+            <span class="hint" id="payout2-hint"></span>
+          </div>
+          <button class="btn primary" id="create-offer" disabled>Get a deposit address</button>
+          <p class="hint">Each trade locks its maximum profit out of your offer until it ends. You can withdraw the rest at any time.</p>
+        </div>
+      </section>
+
+      <section class="panel" id="pending-panel" hidden>
+        <h2>Waiting for your payment</h2>
+        <div id="pending"></div>
+      </section>
+
+      <section class="panel">
+        <details>
+          <summary>Your key</summary>
+          <p class="hint">This browser holds the key that closes your trades and withdraws your offers, and the addresses you created. The key never moves funds anywhere but your Arkade address. Back both up before clearing site data.</p>
+          <div class="row-actions">
+            <button class="btn small" id="show-key">Back up</button>
+            <button class="btn small" id="restore-key">Restore</button>
+          </div>
+          <div class="key" id="key-out" hidden></div>
+        </details>
+      </section>
+    </div>
+
+    <div class="stack">
+      <section class="panel">
+        <h2>Your positions</h2>
+        <div id="mine"><p class="empty">Loading…</p></div>
+      </section>
+      <section class="panel" id="lp-panel" hidden>
+        <h2>Your liquidity</h2>
+        <div id="my-offers"></div>
+        <div id="against"></div>
+      </section>
+      <section class="panel">
+        <h2>Market</h2>
+        <p class="lede" id="market-summary">–</p>
+        <div class="scroll"><table>
+          <thead><tr><th>Liquidity</th><th>Spread</th><th>Holding fee a day</th><th>Up to</th><th>Longest trade</th><th>Usable for</th></tr></thead>
+          <tbody id="offers"></tbody>
+        </table></div>
+      </section>
+      <section class="panel">
+        <h2>Activity</h2>
+        <div id="log"><p class="empty">Nothing yet.</p></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

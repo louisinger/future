@@ -1,0 +1,53 @@
+{
+  "contractName": "FutureOfferDeposit",
+  "constructorInputs": [
+    {"name": "offerProgram", "type": "bytes32"},
+    {"name": "lpPk", "type": "pubkey"},
+    {"name": "lpProgram", "type": "bytes32"},
+    {"name": "spreadBps", "type": "int"},
+    {"name": "maxLeverage", "type": "int"},
+    {"name": "maxDuration", "type": "int"},
+    {"name": "carryBps", "type": "int"},
+    {"name": "exitDelay", "type": "int"}
+  ],
+  "structs": [],
+  "functions": [
+    {
+      "name": "register",
+      "arkade": {
+        "inputs": [],
+        "asm": [
+          "OP_INSPECTNUMINPUTS", "1", "OP_NUMEQUALVERIFY",
+          "0x01", "<lpPk>", "OP_CAT", "<lpProgram>", "OP_CAT",
+          "<spreadBps>", "8", "OP_NUM2BIN", "OP_CAT",
+          "<maxLeverage>", "8", "OP_NUM2BIN", "OP_CAT",
+          "<maxDuration>", "8", "OP_NUM2BIN", "OP_CAT",
+          "<carryBps>", "8", "OP_NUM2BIN", "OP_CAT",
+          "64", "OP_INSPECTPACKET", "OP_VERIFY", "OP_EQUALVERIFY",
+          "0", "OP_INSPECTOUTPUTSCRIPTPUBKEY", "1", "OP_NUMEQUALVERIFY", "<offerProgram>", "OP_EQUALVERIFY",
+          "0", "OP_INSPECTOUTPUTVALUE", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTVALUE", "OP_GREATERTHANOREQUAL"
+        ]
+      },
+      "leaves": [
+        {
+          "name": "register",
+          "asm": ["<SERVER_KEY>", "OP_CHECKSIGVERIFY", "<EMULATOR_KEY:register>", "OP_CHECKSIG"],
+          "witness": [
+            {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
+            {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
+          ]
+        }
+      ]
+    },
+    {
+      "name": "exit",
+      "leaves": [
+        {
+          "name": "exit",
+          "asm": ["<exitDelay>", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<lpPk>", "OP_CHECKSIG"],
+          "witness": [{"name": "lpSig", "type": "signature", "encoding": "schnorr-64"}]
+        }
+      ]
+    }
+  ]
+}

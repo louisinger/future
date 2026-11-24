@@ -1,0 +1,76 @@
+{
+  "format": "template/v1",
+  "type": "virtual",
+  "variables": {
+    "oracle_pk": "bytes",
+    "renewal_window": "int",
+    "max_fee": "int",
+    "position_program": "bytes32",
+    "lp_pk": "pubkey",
+    "lp_program": "bytes32",
+    "spread_bps": "int",
+    "max_leverage": "int",
+    "max_duration": "int",
+    "exit_delay": "int",
+    "carry_bps": "int"
+  },
+  "inputs": [
+    {
+      "name": "deposit",
+      "contract": {
+        "definition": {
+          "artifact": "5631949d80a4775285d45fc5161eb73883be6468da0f6f8296d1479d75f0a5fb"
+        },
+        "arguments": {
+          "offerProgram": {
+            "program": "offer"
+          },
+          "lpPk": "<lp_pk>",
+          "lpProgram": "<lp_program>",
+          "spreadBps": "<spread_bps>",
+          "maxLeverage": "<max_leverage>",
+          "maxDuration": "<max_duration>",
+          "exitDelay": "<exit_delay>",
+          "carryBps": "<carry_bps>"
+        }
+      },
+      "spend": {
+        "function": "register",
+        "leaf": "register"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "offer",
+      "index": 0,
+      "value": {
+        "from": "deposit"
+      },
+      "locking": {
+        "contract": {
+          "definition": {
+            "artifact": "549c0bb0511cea800929d90bb81ef0c991783ac9abfce638d2cd40ab756ac106"
+          },
+          "arguments": {
+            "oraclePk": "<oracle_pk>",
+            "positionProgram": "<position_program>",
+            "renewalWindow": "<renewal_window>",
+            "maxFee": "<max_fee>"
+          }
+        }
+      }
+    }
+  ],
+  "packets": {
+    "output_index": 1,
+    "rules": [
+      {
+        "type": 64,
+        "action": "emit",
+        "from": "deposit",
+        "data": "01$(<lp_pk> 1 32 OP_SUBSTR)<lp_program>$(<spread_bps> 8 OP_NUM2BIN)$(<max_leverage> 8 OP_NUM2BIN)$(<max_duration> 8 OP_NUM2BIN)$(<carry_bps> 8 OP_NUM2BIN)"
+      }
+    ]
+  }
+}
