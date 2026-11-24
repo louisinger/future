@@ -1,42 +1,36 @@
 import "./style.css";
-import { sha256 } from "@noble/hashes/sha2.js";
-import templateIds from "../contracts/testdata/templates.json";
-import { type Account, type Deposit, Engine, NoCoinError, accountFrom, explain, newAccount } from "./engine";
-import { Executor } from "./executor";
-import { DIA_EXPLORER, type PriceUpdate, dia, localOracle } from "./oracle";
 import {
+  type Account,
+  DIA_EXPLORER,
+  type Deposit,
+  Engine,
+  Executor,
   MIN_MARGIN,
+  NETWORKS as ENDPOINTS,
+  NoCoinError,
   type Offer,
   type OfferTerms,
   type Position,
+  type PriceUpdate,
   type Quote,
   type TradeTerms,
+  accountFrom,
+  dia,
   fee,
   levels,
+  localOracle,
+  newAccount,
   payouts,
   resolvable,
-} from "./payoff";
+} from "@louisinger/future-sdk";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { explain } from "./explain";
 import { qrSvg } from "./qr";
 
 const NETWORKS = {
-  mainnet: {
-    name: "Mainnet",
-    arkUrl: "https://arkade.computer",
-    emulatorUrl: "https://emulator.arkade.computer",
-    executorUrl: "https://executor.arkade.sh",
-  },
-  mutinynet: {
-    name: "Mutinynet",
-    arkUrl: "https://mutinynet.arkade.sh",
-    emulatorUrl: "https://emulator.mutinynet.arkade.sh",
-    executorUrl: "https://executor.mutinynet.arkade.sh",
-  },
-  regtest: {
-    name: "Regtest",
-    arkUrl: "http://localhost:7070",
-    emulatorUrl: "http://localhost:7073",
-    executorUrl: "http://localhost:7080",
-  },
+  mainnet: { name: "Mainnet", ...ENDPOINTS.mainnet },
+  mutinynet: { name: "Mutinynet", ...ENDPOINTS.mutinynet },
+  regtest: { name: "Regtest", ...ENDPOINTS.regtest },
 };
 type Net = keyof typeof NETWORKS;
 // The network is the one in the address, else the one last chosen in this browser, else mainnet.
@@ -741,7 +735,7 @@ const guarded = (action: string, fn: () => void) => () => {
 async function boot(): Promise<void> {
   const oracle = net === "regtest" ? localOracle(sha256(new TextEncoder().encode(TEST_ORACLE_SEED)), () => testPrice) : dia();
   engine = await Engine.connect({ ...NETWORKS[net], oracle });
-  void Executor.connect(NETWORKS[net].executorUrl, engine.keys, Object.values(templateIds)).then((e) => {
+  void Executor.connect(NETWORKS[net].executorUrl, engine.keys).then((e) => {
     executor = e;
   });
   const saved = store.get<Account | null>("account", null);

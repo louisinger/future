@@ -1,5 +1,5 @@
 import "./style.css";
-import { type PositionState, fee, houseShare, levels, resolvable } from "./payoff";
+import { type PositionState, fee, houseShare, levels, resolvable } from "@louisinger/future-sdk";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const sats = (n: number) => `${Math.round(n).toLocaleString("en-US")} sats`;

@@ -7,22 +7,18 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run test/unit",
-    "test:e2e": "vitest run test/e2e",
-    "typecheck": "tsc --noEmit"
+    "test": "pnpm -C sdk test",
+    "test:e2e": "pnpm -C sdk test:e2e",
+    "typecheck": "tsc --noEmit && pnpm -C sdk typecheck"
   },
   "dependencies": {
-    "@arkade-os/sdk": "0.5.13",
-    "@noble/curves": "^2.4.0",
-    "@noble/hashes": "^2.4.0",
-    "@scure/base": "^2.4.0",
-    "@scure/btc-signer": "^2.4.1"
+    "@louisinger/future-sdk": "workspace:*",
+    "@noble/hashes": "^2.4.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "typescript": "^7.0.2",
-    "vite": "^8.3.8",
-    "vitest": "^5.1.1"
+    "vite": "^8.3.8"
   },
   "packageManager": "pnpm@10.26.2"
 }

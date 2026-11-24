@@ -25,6 +25,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm -C sdk build
       - run: pnpm build
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -36,17 +38,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: future
-      # contracts/go.mod reads executor's template engine from a sibling checkout
+      # sdk/contracts/go.mod reads executor's template engine from a sibling checkout
       - uses: actions/checkout@v4
         with:
           repository: arkade-os/executor
           path: executor
       - uses: actions/setup-go@v5
         with:
-          go-version-file: future/contracts/go.mod
-          cache-dependency-path: future/contracts/go.sum
+          go-version-file: future/sdk/contracts/go.mod
+          cache-dependency-path: future/sdk/contracts/go.sum
       - run: go test ./...
-        working-directory: future/contracts
+        working-directory: future/sdk/contracts
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

@@ -8,6 +8,25 @@ importers:
 
   .:
     dependencies:
+      '@louisinger/future-sdk':
+        specifier: workspace:*
+        version: link:sdk
+      '@noble/hashes':
+        specifier: ^2.4.0
+        version: 2.4.0
+    devDependencies:
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ^8.3.8
+        version: 8.3.8(@types/node@26.6.6)
+
+  sdk:
+    dependencies:
       '@arkade-os/sdk':
         specifier: 0.5.13
         version: 0.5.13
@@ -20,9 +39,6 @@ importers:
       '@scure/base':
         specifier: ^2.4.0
         version: 2.4.0
-      '@scure/btc-signer':
-        specifier: ^2.4.1
-        version: 2.4.1
     devDependencies:
       '@types/node':
         specifier: ^26.6.6

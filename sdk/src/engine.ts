@@ -20,7 +20,7 @@ import offerArtifact from "../contracts/artifacts/offer.json";
 import offerDepositArtifact from "../contracts/artifacts/offer_deposit.json";
 import positionArtifact from "../contracts/artifacts/position.json";
 import tradeDepositArtifact from "../contracts/artifacts/trade_deposit.json";
-import { type Oracle, OracleError, type PriceUpdate, scriptNum } from "./oracle";
+import { type Oracle, type PriceUpdate, scriptNum } from "./oracle.js";
 import {
   type Coin,
   type Offer,
@@ -35,7 +35,7 @@ import {
   payouts,
   validOffer,
   validPosition,
-} from "./payoff";
+} from "./payoff.js";
 
 const QUOTE_PACKET = 34;
 const OFFER_PACKET = 64;
@@ -56,6 +56,9 @@ export interface Deposit {
   address: string;
   script: string;
 }
+
+/** The ids of the market's executor templates, as an executor names them. */
+export const TEMPLATES: { register_offer: string; refund_trade: string; renew_position: string } = templateIds;
 
 /** What an executor needs to run one of the market's templates for an address. */
 export interface Delegation {
@@ -518,28 +521,6 @@ export class Engine {
   private async send(builder: arkade.ArkadeTransactionBuilder): Promise<string> {
     return (await builder.send()).txid;
   }
-}
-
-/** Turns the failure of an action into a sentence for the person who asked for it. */
-export function explain(action: string, err: unknown): string {
-  const message = err instanceof Error ? err.message : String(err);
-  const has = (...parts: string[]) => parts.some((p) => message.includes(p));
-  if (err instanceof NoCoinError) return "Nothing has arrived at this address yet.";
-  if (has("signature verification failed")) return "This key is not allowed to do that.";
-  if (has("ALREADY_SPENT", "already spent", "double spend")) {
-    return "That coin was just used by another transaction. Refreshing.";
-  }
-  if (has("failed to execute arkade script")) {
-    if (action === "fill") return "The trade could not open: the price or the offer changed. Trying again.";
-    if (action === "resolve") return "This position cannot be settled at this price.";
-    if (action === "close") return "The close was refused. Refresh the price and try again.";
-    return "The contract refused this transaction.";
-  }
-  if (err instanceof OracleError) return `No signed price right now: ${message}. Trying again shortly.`;
-  if (has("Failed to fetch", "fetch failed", "ECONNREFUSED", "NetworkError")) {
-    return "Cannot reach the Arkade operator. Check your connection.";
-  }
-  return `${message.charAt(0).toUpperCase()}${message.slice(1)}.`;
 }
 
 function load(artifact: unknown): ReturnType<typeof arkade.programFromArtifact> {

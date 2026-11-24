@@ -7,7 +7,6 @@ import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import { hex } from "@scure/base";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Engine, ForeignAddressError, NoCoinError, newAccount, type Account } from "../../src/engine";
-import templateIds from "../../contracts/testdata/templates.json";
 import { Executor } from "../../src/executor";
 import { type Oracle, dia, localOracle, trustedUpdate } from "../../src/oracle";
 import { NoOfferError, levels, type OfferTerms, type Position, type Quote, type TradeTerms } from "../../src/payoff";
@@ -268,7 +267,7 @@ describe("a market", () => {
   // Needs executord on :7080 with the market's templates (scripts/register-templates.sh).
   it("lets an executor publish an offer and refund a late deposit, with no client involved", async ({ skip }) => {
     const d = await Desk.open();
-    const executor = await Executor.connect(EXECUTOR_URL, d.engine.keys, Object.values(templateIds));
+    const executor = await Executor.connect(EXECUTOR_URL, d.engine.keys);
     if (!executor) return skip();
 
     const offer = d.offerTerms(10);

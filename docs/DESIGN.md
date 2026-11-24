@@ -122,14 +122,14 @@ time, which an executor cannot do: a page does those.
 
 ## Tests
 
-- `contracts/`: each script executed in the emulator's engine, accepted and refused cases, a
+- `sdk/contracts/`: each script executed in the emulator's engine, accepted and refused cases, a
   price sweep checking settlement against the payoff for longs, shorts, fees and near-dust
   pots, and the three executord templates built by the template engine.
   The price check runs on updates signed like DIA's by a test key: rounding at half a cent,
   an expired update, another signer, a tampered nonce, a price of zero.
-- `test/unit`: the arithmetic, state validation, byte parity of the SDK's derivation with the
+- `sdk/test/unit`: the arithmetic, state validation, byte parity of the SDK's derivation with the
   Go tests' scripts, a recorded DIA response, and the price client's caching and back-off.
-- `test/e2e`: on regtest, with real arkd and emulator: a market's life, a short to its
+- `sdk/test/e2e`: on regtest, with real arkd and emulator: a market's life, a short to its
   take-profit, a cancelled deposit, the holding fee at a non-round price, address checks, a
   trade opened and closed on DIA's live price and real signature, and executord publishing an
   offer and refunding a late deposit from delegations alone.

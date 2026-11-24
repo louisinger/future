@@ -38,7 +38,7 @@ Each network is a separate market with its own key and addresses in the browser.
 
 ### The price
 
-`src/oracle.ts` reads DIA's latest signed BTC/USD update from its public RPC,
+`sdk/src/oracle.ts` reads DIA's latest signed BTC/USD update from its public RPC,
 `https://rpc.diadata.org`, with no account and no key. Each browser asks for itself, at most
 once per 20 seconds however many trades are open (DIA publishes about every 25) with one to
 four small requests, shares the
@@ -49,7 +49,7 @@ DIA has two signers taking turns, about ten seconds apart, and the contracts pin
 `0x6f8b…c51c`. The registry's "latest" is whoever published last, so when that is the other
 signer the page finds the pinned signer's newest update in the registry's events and reads it by
 its hash: every price it uses is that signer's, and under half a minute old. `node
-scripts/dia-signer.mjs` prints who signed the latest update. A market on another key is a new
+sdk/scripts/dia-signer.mjs` prints who signed the latest update. A market on another key is a new
 set of addresses.
 
 ### The executor
@@ -62,24 +62,25 @@ with no page open. Without them the page does both itself while it is open.
 Templates are registered on an executor's admin port, by its operator:
 
 ```sh
-scripts/register-templates.sh http://localhost:7081
+sdk/scripts/register-templates.sh http://localhost:7081
 ```
 
 ## Layout
 
+The repository is the app and, in `sdk/`, the client it is built on:
+[`@louisinger/future-sdk`](sdk/README.md), usable on its own from a browser or Node.
+
 ```
 index.html, how.html     the two pages
-src/payoff.ts            the market's arithmetic: payoff, fee, levels, matching, state validation
-src/engine.ts            the client: addresses, market state, every transaction, on @arkade-os/sdk
-src/oracle.ts            signed prices: DIA's, and a test signer for a local stack
-src/executor.ts          hands addresses to the network's executor
 src/main.ts              the trading page
 src/how.ts               the reference page
+src/explain.ts           failures as sentences
 src/qr.ts                QR codes for deposit addresses
-contracts/artifacts/     the four contracts, hand-written Arkade Script
-contracts/               their tests, a Go module that runs each script in the emulator's engine
-contracts/executor-templates/   templates executord can run by itself: register, refund, renew
-scripts/                 register the templates on an executor, print DIA's current signer
+sdk/src/                 the client: addresses, market state, every transaction, prices, executor
+sdk/contracts/artifacts/ the four contracts, hand-written Arkade Script
+sdk/contracts/           their tests, a Go module that runs each script in the emulator's engine
+sdk/contracts/executor-templates/   templates executord can run by itself: register, refund, renew
+sdk/scripts/             register the templates on an executor, print DIA's current signer
 docs/DESIGN.md           how it works and what it does not protect against
 ```
 
@@ -88,18 +89,18 @@ docs/DESIGN.md           how it works and what it does not protect against
 ```sh
 pnpm test                      # arithmetic, the price client, script parity with the Go tests
 pnpm test:e2e                  # full market on a local regtest stack
-(cd contracts && go test ./...)   # every contract function, accepted and refused
+(cd sdk/contracts && go test ./...)   # every contract function, accepted and refused
 ```
 
-- `contracts` needs a sibling checkout of [executor](https://github.com/arkade-os/executor) for
-  its template engine (`replace` in `go.mod`). `contracts/testdata/vectors.json` pins each
-  contract's output script; `test/unit/vectors.test.ts` checks the SDK derives the same bytes,
+- `sdk/contracts` needs a sibling checkout of [executor](https://github.com/arkade-os/executor) for
+  its template engine (`replace` in `go.mod`). `sdk/contracts/testdata/vectors.json` pins each
+  contract's output script; `sdk/test/unit/vectors.test.ts` checks the SDK derives the same bytes,
   so the scripts the Go tests execute are the ones the page deploys. Rewrite it, and the
   template ids in `templates.json`, with `UPDATE_VECTORS=1 go test ./...` after changing a
   contract; a template names its contracts by id, printed by the failing test.
 - `pnpm test:e2e` expects arkd and the emulator on localhost and a container named `arkd`
   whose CLI wallet it uses as a faucet. executor's `make regtest-up` provides all three. One
-  scenario trades on DIA's live price, so it needs the internet. The executor scenario runs when
+  Two scenarios read DIA's live prices, so they need the internet. The executor scenario runs when
   executord answers on `:7080` with the templates registered, and is skipped otherwise.
 
 ## Known limits

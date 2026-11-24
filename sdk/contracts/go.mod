@@ -1,4 +1,4 @@
-module github.com/louisinger/future/contracts
+module github.com/louisinger/future/sdk/contracts
 
 go 1.27.4
 
@@ -44,4 +44,4 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-replace github.com/arkade-os/executor/pkg/template => ../../executor/pkg/template
+replace github.com/arkade-os/executor/pkg/template => ../../../executor/pkg/template
