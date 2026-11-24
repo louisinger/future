@@ -150,6 +150,23 @@ describe("a market", () => {
     await d.resolve(second, 6_000_000);
     await eventually(async () => expect(await d.paid(d.lpPayout)).toBe(4_067 + DEPOSIT + 5_000));
 
+    // what settled is readable by anyone afterwards
+    const settled = await eventually(async () => {
+      const all = await d.engine.settlements();
+      expect(all).toHaveLength(2);
+      return all;
+    });
+    const of = (p: Position) => settled.find((s) => s.txid === p.txid);
+    expect(of(second)).toMatchObject({
+      txid: second.txid, ending: "liquidated", price: 6_000_000, trader: 0, provider: DEPOSIT + 5_000,
+      entryPrice: 10_010_000, traderPk: d.trader.pub.slice(2), lpProgram: d.lpPayout,
+    });
+    expect(of(first)).toMatchObject({
+      txid: first.txid, ending: "closed", price: 10_500_000, trader: 10_933, provider: 4_067,
+    });
+    const seen = new Set(settled.map((s) => `${s.txid}:${s.vout}`));
+    expect(await d.engine.settlements((o) => seen.has(o))).toHaveLength(0);
+
     const [rest] = await d.engine.offers();
     expect(rest.amount).toBe(2 * DEPOSIT - 10_000);
     await expect(d.engine.withdraw(rest, d.trader.key)).rejects.toThrow("signature verification failed");

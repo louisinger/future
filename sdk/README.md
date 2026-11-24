@@ -140,6 +140,21 @@ for (const p of await market.positions()) {
 `payouts`, `levels`, `fee` and `houseShare` are the contracts' arithmetic, for showing what a
 position is worth before it settles.
 
+## See what settled
+
+A settled position stays readable: who was in it, the price it settled on, how it ended and
+what each side received. This is how a provider learns that a trade against their offer closed
+while they were away.
+
+```ts
+for (const s of await market.settlements()) {
+  // s.ending: "closed" by the trader, "liquidated", "take-profit" or "ended" at its end date
+  console.log(s.side ? "short" : "long", s.entryPrice, "→", s.price, s.ending, s.trader, s.provider);
+}
+```
+
+Pass `settlements((outpoint) => seen.has(outpoint))` to skip the ones already read.
+
 ## Executor
 
 An [executor](https://github.com/arkade-os/executor) that has the market's templates acts with

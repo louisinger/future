@@ -3,6 +3,7 @@ import {
   MIN_MARGIN,
   NoOfferError,
   candidates,
+  ending,
   fee,
   houseShare,
   levels,
@@ -26,6 +27,7 @@ function offer(amount: number, spreadBps: number, maxLeverage: number, carryBps 
     amount,
     script: "",
     spent: false,
+    spentBy: "",
     createdAt: NOW,
     expiresAt: NOW + 7 * 86400,
     lpPk: "",
@@ -255,6 +257,33 @@ describe("resolvable", () => {
   it("at any price once it has ended", () => expect(resolvable(p, 6_000_000, 2_000)).toBe(true));
 });
 
+describe("ending", () => {
+  const long: PositionState = {
+    side: 0, entryPrice: 6_000_000, notional: 100_000, margin: 10_000, houseMargin: 20_000,
+    startAt: 1_000, expiry: 2_000, carryBps: 0,
+  };
+  const short = { ...long, side: 1 };
+  const { liquidation, takeProfit } = levels(long, 1_500);
+  const cases: [string, PositionState, number, number, string][] = [
+    ["a long settled while it runs, between its levels", long, 6_100_000, 1_500, "closed"],
+    ["a long at its liquidation price", long, liquidation, 1_500, "liquidated"],
+    ["a long below its liquidation price", long, liquidation - 100_000, 1_500, "liquidated"],
+    ["a long at its take-profit price", long, takeProfit, 1_500, "take-profit"],
+    ["a short when the price doubles", short, 12_000_000, 1_500, "liquidated"],
+    ["a short when the price halves", short, 3_000_000, 1_500, "take-profit"],
+    ["any position at its end date", long, 6_100_000, 2_000, "ended"],
+    ["a liquidated position past its end date", long, liquidation, 2_500, "ended"],
+  ];
+  it.each(cases)("%s", (_name, p, price, time, want) => {
+    expect(ending(p, price, time)).toBe(want);
+  });
+  it("is closed exactly when nobody but the trader could settle", () => {
+    for (const price of [3_000_000, liquidation, liquidation + 1, 6_000_000, takeProfit - 1, takeProfit]) {
+      expect(ending(long, price, 1_500) === "closed").toBe(!resolvable(long, price, 1_500));
+    }
+  });
+});
+
 describe("state read from the network", () => {
   const p: PositionState = {
     side: 0, entryPrice: 6_000_000, notional: 100_000, margin: 10_000, houseMargin: 20_000,
@@ -320,7 +349,7 @@ describe("houseShare", () => {
 });
 
 describe("payouts", () => {
-  const coin = { txid: "a", vout: 0, script: "", spent: false, createdAt: 0, expiresAt: 0 };
+  const coin = { txid: "a", vout: 0, script: "", spent: false, spentBy: "", createdAt: 0, expiresAt: 0 };
   const p: Position = {
     ...coin, amount: 30_000, side: 0, entryPrice: 6_000_000, notional: 100_000, margin: 10_000,
     houseMargin: 20_000, startAt: 0, expiry: 86400, carryBps: 0, traderPk: "", traderProgram: "",

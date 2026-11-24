@@ -3,6 +3,7 @@ import {
   type Account,
   DIA_EXPLORER,
   type Deposit,
+  type Ending,
   Engine,
   Executor,
   MIN_MARGIN,
@@ -81,6 +82,19 @@ interface Entry {
   text: string;
   tone: string;
 }
+// A settled trade this browser was a side of.
+interface Closed {
+  id: string;
+  mine: boolean;
+  side: number;
+  leverage: number;
+  entryPrice: number;
+  price: number;
+  time: number;
+  ending: Ending;
+  received: number;
+  result: number;
+}
 
 // Whether this browser keeps what the page saves: without it the key lives only in this tab.
 const storageWorks = (() => {
@@ -128,6 +142,13 @@ const usd = (cents: number) =>
 const pct = (bps: number) => `${(bps / 100).toFixed(2)}%`;
 const xonly = (pub: string) => pub.slice(2);
 const now = () => Math.floor(Date.now() / 1000);
+function ago(ts: number): string {
+  const s = now() - ts;
+  if (s < 90) return "just now";
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 172800) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86400)} days ago`;
+}
 function until(ts: number): string {
   const s = ts - now();
   if (s <= 0) return "now";
@@ -155,6 +176,12 @@ const trades = store.get<TradeDeposit[]>("trades", []);
 const offerDeposits = store.get<OfferDeposit[]>("offerDeposits", []);
 let activity = store.get<Entry[]>("activity", []);
 const confirming = new Set<string>();
+let closed = store.get<Closed[]>("closed", []);
+// ponytail: every settled position of the market is remembered by id so it is read once; prune by
+// age if a market ever settles tens of thousands
+const settledSeen = new Set(store.get<string[]>("settledSeen", []));
+const settledHere = new Set<string>();
+const openedSeen = new Set(store.get<string[]>("openedSeen", []));
 
 // ---------- activity ----------
 function say(text: string, tone = ""): void {
@@ -452,6 +479,7 @@ async function settleResolvable(): Promise<boolean> {
     if (!p.resolvable || !(isMine(p) || isAgainstMe(p))) continue;
     try {
       const at = await engine.resolve(p);
+      settledHere.add(`${p.txid}:${p.vout}`);
       settled = true;
       const mine = isMine(p);
       const got = mine ? p.traderAmount : p.amount - p.traderAmount;
@@ -463,6 +491,66 @@ async function settleResolvable(): Promise<boolean> {
   }
   return settled;
 }
+
+const ENDINGS: Record<Ending, string> = {
+  closed: "was closed by the trader",
+  liquidated: "was liquidated",
+  "take-profit": "reached its take-profit",
+  ended: "reached its end date",
+};
+// Reads the trades that settled since the last look, whoever settled them, and keeps the ones
+// this browser was a side of. The first look fills the list without announcing old news.
+async function recordSettlements(): Promise<void> {
+  const announce = store.get("settledRead", false);
+  const fresh = await engine.settlements((id) => settledSeen.has(id));
+  for (const s of fresh.reverse()) {
+    const id = `${s.txid}:${s.vout}`;
+    settledSeen.add(id);
+    const mine = isMine(s);
+    if ((!mine && !isAgainstMe(s)) || closed.some((c) => c.id === id)) continue;
+    const received = mine ? s.trader : s.provider;
+    const entry: Closed = {
+      id,
+      mine,
+      side: s.side,
+      leverage: Math.round(s.notional / Math.max(1, s.margin)),
+      entryPrice: s.entryPrice,
+      price: s.price,
+      time: s.time,
+      ending: s.ending,
+      received,
+      result: received - (mine ? s.margin : s.houseMargin),
+    };
+    closed.unshift(entry);
+    if (announce && !settledHere.has(id)) {
+      say(`${closedTitle(entry)} ${ENDINGS[entry.ending]} at ${usd(entry.price)}: ${fmtSats(received)} paid to you (${signed(entry.result)}).`, entry.result >= 0 ? "good" : "bad");
+    }
+  }
+  if (fresh.length || !announce) {
+    closed = closed.slice(0, 100);
+    store.set("closed", closed);
+    store.set("settledSeen", [...settledSeen]);
+    store.set("settledRead", true);
+  }
+}
+// Tells a provider when someone opens a trade against their offer.
+function announceOpened(): void {
+  const announce = store.get("openedRead", false);
+  const fresh = positions.filter((p) => isAgainstMe(p) && !openedSeen.has(`${p.txid}:${p.vout}`));
+  for (const p of fresh) {
+    openedSeen.add(`${p.txid}:${p.vout}`);
+    const lev = Math.round(p.notional / Math.max(1, p.margin));
+    if (announce) {
+      say(`A ${p.side ? "short" : "long"} ${lev}× opened against your offer at ${usd(p.entryPrice)}: ${fmtSats(p.houseMargin)} of your liquidity is locked until it closes.`);
+    }
+  }
+  if (fresh.length || !announce) {
+    store.set("openedSeen", [...openedSeen]);
+    store.set("openedRead", true);
+  }
+}
+const closedTitle = (c: Closed) =>
+  `${c.mine ? "Your" : "A"} ${c.side ? "short" : "long"} ${c.leverage}×${c.mine ? "" : " against your offer"}`;
 
 async function loadPositions(): Promise<Priced[]> {
   if (!latest) return [];
@@ -487,6 +575,8 @@ async function refresh(): Promise<void> {
     offers = await engine.offers();
     positions = await loadPositions();
     if (await settleResolvable()) positions = await loadPositions();
+    announceOpened();
+    await recordSettlements();
   } catch (e) {
     say(explain("refresh", e), "bad");
   }
@@ -636,6 +726,7 @@ function positionCard(p: Priced, mine: boolean): HTMLElement {
         { className: "row-actions" },
         confirmable(`close-${p.txid}`, "Close position", `Close now for ${fmtSats(p.traderAmount)}?`, "Close it", "close", async () => {
           const at = await engine.close(p, account.key);
+          settledHere.add(`${p.txid}:${p.vout}`);
           say(`Position closed at ${usd(at.price)}: about ${fmtSats(p.traderAmount)} paid to you (${signed(pnl)}).`, pnl >= 0 ? "good" : "bad");
         }),
       ),
@@ -689,6 +780,29 @@ function render(): void {
     ),
   );
   $("against").replaceChildren(...against.map((p) => positionCard(p, false)));
+
+  $("history-panel").hidden = !closed.length;
+  $("history").replaceChildren(
+    ...closed.map((c) =>
+      el(
+        "div",
+        { className: "item" },
+        el(
+          "div",
+          { className: "pos-head" },
+          el(
+            "div",
+            {},
+            el("span", { className: `tag ${c.side ? "short" : "long"}`, textContent: `${c.side ? "Short" : "Long"} ${c.leverage}×` }),
+            " ",
+            el("span", { className: "muted", textContent: `${c.mine ? "" : "against your offer, "}from ${usd(c.entryPrice)} to ${usd(c.price)}` }),
+          ),
+          el("div", { className: `pnl num ${c.result >= 0 ? "long" : "short"}`, textContent: signed(c.result) }),
+        ),
+        el("p", { className: "hint", textContent: `${closedTitle(c)} ${ENDINGS[c.ending]} ${ago(c.time)}. ${fmtSats(c.received)} paid to you.` }),
+      ),
+    ),
+  );
 
   const liquidity = offers.reduce((s, o) => s + o.amount, 0);
   const openInterest = positions.reduce((s, p) => s + p.notional, 0);

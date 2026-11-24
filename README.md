@@ -24,6 +24,10 @@ pnpm build                     # static site in dist/, servable from any folder
 A push to `main` tests, builds and publishes `dist/` to GitHub Pages
 (`.github/workflows/pages.yml`).
 
+The page shows your open positions, your liquidity and the trades against it, and a list of
+closed trades with how each ended (closed by the trader, liquidated, take-profit, end date), the
+price and what you received, whoever settled them and whether or not the page was open.
+
 ## Networks
 
 The header switches network; `?net=` in the address does the same.

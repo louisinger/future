@@ -31,9 +31,11 @@ import {
   type OfferTerms,
   type Position,
   type Quote,
+  type Settlement,
   type TradeTerms,
   DUST_FOLD,
   candidates,
+  ending,
   match,
   maxDuration,
   payouts,
@@ -244,6 +246,7 @@ export class Engine {
       amount: v.value,
       script: v.script,
       spent: Boolean(v.isSpent),
+      spentBy: v.arkTxId ?? "",
       createdAt: Math.floor(v.createdAt.getTime() / 1000),
       expiresAt: expiryOf(v),
     }));
@@ -275,27 +278,40 @@ export class Engine {
   async positions(): Promise<Position[]> {
     const out: Position[] = [];
     for (const [coin, s] of await this.stateful(this.positionScript, POSITION_PACKET, POSITION_STATE_SIZE)) {
-      try {
-        const position: Position = {
-          ...coin,
-          side: readLe8(s, 1),
-          entryPrice: readLe8(s, 9),
-          notional: readLe8(s, 17),
-          margin: readLe8(s, 25),
-          houseMargin: readLe8(s, 33),
-          startAt: readLe8(s, 41),
-          expiry: readLe8(s, 49),
-          traderPk: hex.encode(s.slice(57, 89)),
-          traderProgram: hex.encode(s.slice(89, 121)),
-          lpProgram: hex.encode(s.slice(121, 153)),
-          carryBps: readLe8(s, 153),
-        };
-        if (validPosition(position)) out.push(position);
-      } catch {
-        // not a note the contracts wrote
-      }
+      const position = readPosition(coin, s);
+      if (position) out.push(position);
     }
     return out;
+  }
+
+  /**
+   * The positions that settled, newest first, each with the price it settled on, how it ended and
+   * what each side received. `known` names the coins, as `txid:vout`, a caller has already seen:
+   * they are not read again. A position a batch renewed did not settle and is not listed.
+   */
+  async settlements(known: (outpoint: string) => boolean = () => false, limit = 50): Promise<Settlement[]> {
+    const spent = (await this.coins(this.positionScript))
+      .filter((c) => c.spentBy && !known(`${c.txid}:${c.vout}`))
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
+    const txs = await this.transactions(spent.flatMap((c) => [c.txid, c.spentBy]));
+    const out: Settlement[] = [];
+    for (const coin of spent) {
+      const state = txs.get(coin.txid)?.getPacketByType(POSITION_PACKET)?.serialize();
+      const quote = txs.get(coin.spentBy)?.getPacketByType(QUOTE_PACKET)?.serialize();
+      if (state?.length !== POSITION_STATE_SIZE || state[0] !== 1 || quote?.length !== 17 || quote[0] !== 1) continue;
+      const position = readPosition(coin, state);
+      if (!position) continue;
+      try {
+        const price = readLe8(quote, 1);
+        const time = readLe8(quote, 9);
+        const { trader, provider } = payouts(position, price, time);
+        out.push({ ...position, price, time, ending: ending(position, price, time), trader, provider });
+      } catch {
+        // not a price the contracts took
+      }
+    }
+    return out.sort((a, b) => b.time - a.time);
   }
 
   /** What an executor needs to turn a payment to the offer deposit of terms into an offer. */
@@ -516,6 +532,24 @@ export class Engine {
     if (this.oracle.scheme !== "dia") throw new Error("there are no executor templates for this oracle");
   }
 
+  /** The notes of transactions, by transaction id; one that cannot be read is left out. */
+  private async transactions(txids: string[]): Promise<Map<string, Extension>> {
+    const out = new Map<string, Extension>();
+    const wanted = [...new Set(txids)];
+    for (let at = 0; at < wanted.length; at += 20) {
+      try {
+        const { txs } = await this.indexer.getVirtualTxs(wanted.slice(at, at + 20));
+        for (const raw of txs) {
+          const tx = Transaction.fromPSBT(base64.decode(raw));
+          out.set(tx.id, Extension.fromTx(tx));
+        }
+      } catch {
+        // those stay unread and are asked again next time
+      }
+    }
+    return out;
+  }
+
   private async unspent(script: string): Promise<Coin> {
     const coin = (await this.coins(script)).find((c) => !c.spent);
     if (!coin) throw new NoCoinError();
@@ -588,6 +622,29 @@ function utxo(c: Coin): arkade.Utxo {
 
 function p2tr(programHex: string): Uint8Array {
   return concat(Uint8Array.of(0x51, 0x20), hex.decode(programHex));
+}
+
+/** The position a coin's note describes, when it is one the contracts could have written. */
+function readPosition(coin: Coin, s: Uint8Array): Position | undefined {
+  try {
+    const position: Position = {
+      ...coin,
+      side: readLe8(s, 1),
+      entryPrice: readLe8(s, 9),
+      notional: readLe8(s, 17),
+      margin: readLe8(s, 25),
+      houseMargin: readLe8(s, 33),
+      startAt: readLe8(s, 41),
+      expiry: readLe8(s, 49),
+      traderPk: hex.encode(s.slice(57, 89)),
+      traderProgram: hex.encode(s.slice(89, 121)),
+      lpProgram: hex.encode(s.slice(121, 153)),
+      carryBps: readLe8(s, 153),
+    };
+    return validPosition(position) ? position : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function quotePacket(q: PriceUpdate): UnknownPacket {

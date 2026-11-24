@@ -18,6 +18,8 @@ export interface Coin {
   amount: number;
   script: string;
   spent: boolean;
+  /** The transaction that spent it; empty while unspent, and when a batch took it. */
+  spentBy: string;
   createdAt: number;
   expiresAt: number;
 }
@@ -135,10 +137,32 @@ export function levels(p: PositionState, at: number): { liquidation: number; tak
 
 /** Whether anyone may settle the position at a price signed now. */
 export function resolvable(p: PositionState, price: number, now: number): boolean {
-  const share = houseShare(p, price, now);
+  return now >= p.startAt && ending(p, price, now) !== "closed";
+}
+
+/**
+ * How a position ends when it settles at a price and time: past its end date, with the trader's
+ * margin gone, with the provider's margin gone, or, when none of those holds, because the trader
+ * closed it, the only settlement the contracts then allow.
+ */
+export type Ending = "ended" | "liquidated" | "take-profit" | "closed";
+
+export function ending(p: PositionState, price: number, time: number): Ending {
+  if (time >= p.expiry) return "ended";
+  const share = houseShare(p, price, time);
   const buffer = Math.floor(p.margin / MAINTENANCE);
-  const exhausted = share <= buffer || share >= p.margin + p.houseMargin - buffer;
-  return now >= p.startAt && (now >= p.expiry || exhausted);
+  if (share >= p.margin + p.houseMargin - buffer) return "liquidated";
+  if (share <= buffer) return "take-profit";
+  return "closed";
+}
+
+/** A position that settled: the price it settled on, how it ended and what each side received. */
+export interface Settlement extends Position {
+  price: number;
+  time: number;
+  ending: Ending;
+  trader: number;
+  provider: number;
 }
 
 const sane = (...values: number[]) => values.every((v) => Number.isSafeInteger(v) && v >= 0);
