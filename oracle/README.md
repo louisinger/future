@@ -70,6 +70,39 @@ key. Each client asks for itself, at most once per 20 seconds, and backs off whe
 has two signers taking turns and an oracle trusts one: when the registry's latest update is the
 other's, the client finds the trusted signer's in the registry's events.
 
+## Deployed oracles
+
+Both trust DIA's Lasernet signer `0x10e34723aA722C7A9860f5eC6446f22252dB168a`, have three
+outputs, and are renewed by the network's executor.
+
+**Mainnet**
+
+```json
+{
+  "assetId": "75bdeeaff59a25d46e4034a1aa245f8294514b2475403f330030843b775971260000",
+  "oraclePk": "100211ee120bca9f272034d98b1b026bb4ab735ebeb5da8be6a69bf7ee0ea24cfd48",
+  "adminPk": "aed46b0341cc642e6ed15e8a51a80efb761bc3a2a8beea73526639fc1d43f6ce"
+}
+```
+
+Address: `ark1qzpq904am6clw3pgqwyh4p02708fy4xs0hcpwt7rwfdttuxsjamee94p76chjnhgaarg42rsr2h90shqr90y8dj53r9fed68npzn8zjmahlwa6`
+
+**Mutinynet**
+
+```json
+{
+  "assetId": "30195f37f8c1697ac90d922cd44b60108cfc2d2781ecc71254742ec95fb7a7380000",
+  "oraclePk": "100211ee120bca9f272034d98b1b026bb4ab735ebeb5da8be6a69bf7ee0ea24cfd48",
+  "adminPk": "0d39790ec5e11c26e34e24daf75df82c9f3d50bc82ce55097b4e3429ee1a6424"
+}
+```
+
+Address: `tark1qqcpq7yq3e8hhsx6ml3fud93m7827qggaurtzu3zwsr4a0qs0gf850g9aeygjfjg953gpkfcjezkha2s0fjw94pptpxrjnr9lt9d48gvxwtcz4`
+
+Pass one of these as `params` below. The address is where the outputs are today; it changes if
+the admin moves them, the asset id never does. `await oracle.audit()` checks that every unit of
+the asset is in an output at that address.
+
 ## Deploy one
 
 ```sh

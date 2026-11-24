@@ -34,11 +34,21 @@ The header switches network; `?net=` in the address does the same.
 
 | | Operator | Emulator | Executor | Oracle |
 |---|---|---|---|---|
-| `mainnet` (default) | `arkade.computer` | `emulator.arkade.computer` | `executor.arkade.sh` | not deployed yet |
-| `mutinynet` | `mutinynet.arkade.sh` | `emulator.mutinynet.arkade.sh` | `executor.mutinynet.arkade.sh` | not deployed yet |
+| `mainnet` (default) | `arkade.computer` | `emulator.arkade.computer` | `executor.arkade.sh` | deployed, below |
+| `mutinynet` | `mutinynet.arkade.sh` | `emulator.mutinynet.arkade.sh` | `executor.mutinynet.arkade.sh` | deployed, below |
 | `regtest` | `localhost:7070` | `localhost:7073` | `localhost:7080` | one you deploy, on a test key |
 
 Each network is a separate market with its own key and addresses in the browser.
+
+The oracles the market reads, each of three coins that the network's executor renews:
+
+| | Oracle address | Identity asset |
+|---|---|---|
+| `mainnet` | `ark1qzpq904am6clw3pgqwyh4p02708fy4xs0hcpwt7rwfdttuxsjamee94p76chjnhgaarg42rsr2h90shqr90y8dj53r9fed68npzn8zjmahlwa6` | `75bdeeaff59a25d46e4034a1aa245f8294514b2475403f330030843b775971260000` |
+| `mutinynet` | `tark1qqcpq7yq3e8hhsx6ml3fud93m7827qggaurtzu3zwsr4a0qs0gf850g9aeygjfjg953gpkfcjezkha2s0fjw94pptpxrjnr9lt9d48gvxwtcz4` | `30195f37f8c1697ac90d922cd44b60108cfc2d2781ecc71254742ec95fb7a7380000` |
+
+Both trust DIA's signer `0x10e34723aA722C7A9860f5eC6446f22252dB168a`. Their full parameters,
+for other apps, are in [`oracle/README.md`](oracle/README.md#deployed-oracles).
 
 ### The price
 
@@ -53,7 +63,7 @@ touching an open trade. The oracle has several interchangeable coins, so that pe
 the same moment do not wait on each other, and an executor renews them.
 
 A network trades once an oracle is deployed on it and its parameters are in
-`sdk/src/networks.ts`:
+`sdk/src/oracles.json` ([docs/DEPLOY.md](docs/DEPLOY.md) has every command):
 
 ```sh
 pnpm -C oracle build
