@@ -79,19 +79,18 @@ node scripts/deploy.mjs --ark https://mutinynet.arkade.sh \
 ```
 
 It prints an address to fund, issues the identity asset with no control asset, so no further
-unit can ever exist, locks one unit in each output, and prints the parameters to publish. Then
-register the renewal with an executor that has the template
-(`scripts/register-templates.sh <admin url>` registers it):
+unit can ever exist, locks one unit in each output, and prints the parameters to publish.
 
-```ts
-await fetch(`${executorUrl}/v1/delegation`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify(oracle.renewal()),
-});
-```
+Add `--executor <url>` and it also has that executor renew the outputs: it gives the executor
+the oracle's contract and renewal template if it lacks them, then registers one delegation that
+covers every output. An executor takes templates on its public port when it runs with
+`EXECUTOR_PUBLIC_REGISTRY=true`, and always on its admin port. From code it is
+`await oracle.renewWith(executorUrl)`; doing it twice changes nothing. Each output holds sats
+that pay its renewals' fees.
 
-One delegation covers every output. Each output holds sats that pay its renewals' fees.
+`node scripts/status.mjs --ark … --emulator … --params <file> --executor <url>` shows the
+outputs and their expiry, audits the asset, and tells whether the executor renews them; with
+`--register` it sets the renewal up.
 
 ## Built for the operator as it runs today
 
@@ -116,5 +115,5 @@ pnpm test:e2e    # on a local regtest stack, against the real emulator
 
 The end-to-end suite deploys oracles, reads prices from them with a consumer contract, has
 several consumers collide, verifies DIA's live signature, and, when executord answers on
-`:7080` with the template, has it renew an output. executor's `make regtest-up` provides the
+`:7080` and takes templates there, has it renew an output. executor's `make regtest-up` provides the
 stack.

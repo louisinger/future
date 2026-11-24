@@ -159,9 +159,8 @@ for (const renewal of market.renewalDelegations()) {              // once per ma
 ```
 
 `delegate` resolves to false when the executor does not have the template; registering the same
-delegation twice changes nothing. `scripts/register-templates.sh <admin url> [renew]` registers
-the templates on an executor. Renewal needs an operator on arkd v0.9.27 or later: see the
-repository's README.
+delegation twice changes nothing. `scripts/register-templates.sh <admin url> renew` registers
+the templates on an executor.
 
 ## What is in the package
 

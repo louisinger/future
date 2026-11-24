@@ -5,20 +5,23 @@
     "oracle_txid": "bytes32",
     "oracle_gidx": "int",
     "renewal_window": "int",
-    "max_fee": "int"
+    "max_fee": "int",
+    "exit_delay": "int"
   },
   "inputs": [
     {
       "name": "position",
       "contract": {
         "definition": {
-          "artifact": "f8a27223e0f1266982a3520d95f20d3774331b7741f911725387156910f104a8"
+          "artifact": "4dea071f94ba452467999f9885bfadb3583a0d8eb410cdca9f2832bf78bf69dc"
         },
         "arguments": {
           "oracleTxid": "<oracle_txid>",
           "oracleGidx": "<oracle_gidx>",
           "renewalWindow": "<renewal_window>",
-          "maxFee": "<max_fee>"
+          "maxFee": "<max_fee>",
+          "exitKey": "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0",
+          "exitDelay": "<exit_delay>"
         }
       },
       "spend": {

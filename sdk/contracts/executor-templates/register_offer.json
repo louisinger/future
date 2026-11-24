@@ -51,14 +51,16 @@
       "locking": {
         "contract": {
           "definition": {
-            "artifact": "80851e0deb18a821d9cedb3e5ecc33139a4ce81eb328c7d2a745150f6423a8c2"
+            "artifact": "d8926ab3855e71e66821afd7c66dba3711d66a82d452c26f2ae1f03cd36fa36d"
           },
           "arguments": {
             "oracleTxid": "<oracle_txid>",
             "oracleGidx": "<oracle_gidx>",
             "positionProgram": "<position_program>",
             "renewalWindow": "<renewal_window>",
-            "maxFee": "<max_fee>"
+            "maxFee": "<max_fee>",
+            "exitKey": "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0",
+            "exitDelay": "<exit_delay>"
           }
         }
       }

@@ -4,9 +4,11 @@
 // Build the package first (`pnpm build`), then:
 //
 //   node scripts/status.mjs --ark <operator> --emulator <emulator> --params <file from deploy>
-//     [--executor <executor's public URL>] [--register]
+//     [--executor <executor's URL>] [--register]
 //
-// --register asks the executor to renew the oracle's outputs; asking again changes nothing.
+// --register gives the executor the oracle's contract and renewal template if it lacks them and
+// asks it to renew the oracle's outputs; doing it again changes nothing. The executor must run
+// with EXECUTOR_PUBLIC_REGISTRY=true, or already have them.
 import { readFileSync } from "node:fs";
 import { DiaOracle, RENEW_TEMPLATE, connect, dia } from "../dist/index.js";
 
@@ -38,18 +40,10 @@ console.log(
   ),
 );
 if (args.executor) {
+  if ("register" in args) await oracle.renewWith(args.executor).catch((e) => console.log("executor", `FAILED: ${e.message}`));
   const has = await fetch(`${args.executor}/v1/template/${RENEW_TEMPLATE}`).then((r) => r.ok, () => false);
-  console.log("executor", has ? "has the renewal template" : "does NOT have the renewal template");
-  if (has && "register" in args) {
-    const res = await fetch(`${args.executor}/v1/delegation`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(oracle.renewal()),
-    });
-    console.log("renewal ", res.ok ? "registered" : `refused: ${await res.text()}`);
-  } else if (has) {
-    const d = await fetch(`${args.executor}/v1/delegation?address=${oracle.address}`).then((r) => (r.ok ? r.json() : null), () => null);
-    console.log("renewal ", d?.delegation ? `registered, ${d.delegation.status}` : "not registered: run again with --register");
-  }
+  console.log("executor", has ? "has the renewal template" : "does NOT have the renewal template: run again with --register");
+  const d = await fetch(`${args.executor}/v1/delegation?address=${oracle.address}`).then((r) => (r.ok ? r.json() : null), () => null);
+  console.log("renewal ", d?.delegation ? `registered, ${d.delegation.status}` : "not registered: run again with --register");
 }
 process.exit(0);

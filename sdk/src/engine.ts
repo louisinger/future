@@ -47,6 +47,11 @@ const OFFER_STATE_SIZE = 97;
 const POSITION_STATE_SIZE = 161;
 const RENEWAL_WINDOW = 86_400n;
 const MAX_FEE = 1_000n;
+// The key of the exit leaf of offers and positions: the point of BIP 341 nobody knows the secret
+// of. They are shared addresses and cannot name an owner's key, and arkd up to v0.9.26 only takes
+// a coin into a batch, to renew it, if its script has an exit leaf.
+// https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
+const UNSPENDABLE_KEY = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
 /** The market's four contracts. */
 export const ARTIFACTS = {
@@ -142,7 +147,13 @@ export class Engine {
     this.network = conn.network;
     this.dust = conn.dust;
     this.exitDelay = conn.exitDelay;
-    const market = { ...this.oracleArgs, renewalWindow: RENEWAL_WINDOW, maxFee: MAX_FEE };
+    const market = {
+      ...this.oracleArgs,
+      renewalWindow: RENEWAL_WINDOW,
+      maxFee: MAX_FEE,
+      exitKey: hex.decode(UNSPENDABLE_KEY),
+      exitDelay: this.exitDelay,
+    };
     this.position = this.client.contract(load(ARTIFACTS.position), market);
     this.offer = this.client.contract(load(ARTIFACTS.offer), {
       ...market,
@@ -340,7 +351,12 @@ export class Engine {
    * them again changes nothing.
    */
   renewalDelegations(): Delegation[] {
-    const market = { ...this.oracleVariables, renewal_window: num(RENEWAL_WINDOW), max_fee: num(MAX_FEE) };
+    const market = {
+      ...this.oracleVariables,
+      renewal_window: num(RENEWAL_WINDOW),
+      max_fee: num(MAX_FEE),
+      exit_delay: num(this.exitDelay),
+    };
     return [
       {
         templateId: TEMPLATES.renew_offer,

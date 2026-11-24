@@ -4,7 +4,9 @@
     {"name": "oracleTxid", "type": "bytes32"},
     {"name": "oracleGidx", "type": "int"},
     {"name": "renewalWindow", "type": "int"},
-    {"name": "maxFee", "type": "int"}
+    {"name": "maxFee", "type": "int"},
+    {"name": "exitKey", "type": "pubkey"},
+    {"name": "exitDelay", "type": "int"}
   ],
   "structs": [],
   "functions": [
@@ -208,6 +210,16 @@
             {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
             {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
           ]
+        }
+      ]
+    },
+    {
+      "name": "exit",
+      "leaves": [
+        {
+          "name": "exit",
+          "asm": ["<exitDelay>", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<exitKey>", "OP_CHECKSIG"],
+          "witness": [{"name": "exitSig", "type": "signature", "encoding": "schnorr-64"}]
         }
       ]
     }

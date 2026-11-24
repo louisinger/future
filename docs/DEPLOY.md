@@ -1,9 +1,11 @@
 # Deploying
 
 Commands to put the oracle and the market on Mutinynet, then on mainnet. Run them from the
-repository root, on the `oracle-output` branch. Everything is filled in except three things only
-you have: the executor's admin URL, the coins that fund the oracle, and the admin key the first
-step creates.
+repository root, on the `oracle-output` branch. Everything is filled in: what remains yours is
+the coins that fund each oracle and the admin key the first step creates.
+
+The executors must accept templates on their public port: `EXECUTOR_PUBLIC_REGISTRY=true`, and a
+restart.
 
 Do Mutinynet first and trade on it before touching mainnet.
 
@@ -29,29 +31,25 @@ echo "$ADMIN_MUTINYNET" "$ADMIN_MAINNET"
 
 ## 2. Mutinynet
 
-### 2.1 Templates on the executor
-
-The admin port (7081) is not public: put the URL you reach it at.
+### 2.1 The market's templates on the executor
 
 ```sh
-EXECUTOR_ADMIN=http://<mutinynet executor admin host>:7081
-sdk/scripts/register-templates.sh "$EXECUTOR_ADMIN"
-oracle/scripts/register-templates.sh "$EXECUTOR_ADMIN"
+sdk/scripts/register-templates.sh https://executor.mutinynet.arkade.sh renew
 ```
 
-Check from the public port. Each line must end in `200`:
+Check them. Each line must end in `200`:
 
 ```sh
 for id in \
-  7bf0fc3fce5b08a6ffcf122bf88020871cbedd654be73c80fb2d48d15780f335 \
+  20514731164e0682fc39f178de619e390e0712c03d8192229a7580e51801efd5 \
   32d07de4874111c1bff5d654447d28e5c49877a27d861bd0999f0dabe38f3bd6 \
-  abb9af08fe162ae60e028b11f4e67e68a961b181642bfb59e7a1fac8b82588df
+  d3e29ce166a9fc6d22c3eb9a4d5b3d562f760d15c0f2819a7d9b4b51f85059f3 \
+  95d5be375613a188283773fceb2f5fb4eba20dac62e782bb605d8188e2ee5079
 do curl -s -o /dev/null -w "$id %{http_code}\n" https://executor.mutinynet.arkade.sh/v1/template/$id; done
 ```
 
-Those are `register_offer`, `refund_trade` and `renew_oracle`. Leave the offer and position
-renewals (`sdk/scripts/register-templates.sh "$EXECUTOR_ADMIN" renew`) until the operator runs
-arkd v0.9.27 or later: earlier versions refuse them and the executor then disables the template.
+Those are `register_offer`, `refund_trade`, `renew_offer` and `renew_position`. The oracle's own
+template is registered by the next step.
 
 ### 2.2 The oracle
 
@@ -66,8 +64,9 @@ node oracle/scripts/deploy.mjs \
 ```
 
 It prints a funding key and `send 31000 sats to tark1…`, then waits. Pay that address from an
-Arkade wallet on Mutinynet. It then issues the token, creates the three oracle coins, asks the
-executor to renew them and writes `oracle.mutinynet.json`. Prices are DIA's, from its documented
+Arkade wallet on Mutinynet. It then issues the token, creates the three oracle coins, gives
+the executor the oracle's contract and renewal template, asks it to renew the coins and writes
+`oracle.mutinynet.json`. Prices are DIA's, from its documented
 signer `0x10e34723aA722C7A9860f5eC6446f22252dB168a`.
 
 ### 2.3 Check it
@@ -108,20 +107,17 @@ old one.
 git tag old-market 95ad03e && git push origin old-market
 ```
 
-### 3.2 Templates on the executor
+### 3.2 The market's templates on the executor
 
 ```sh
-EXECUTOR_ADMIN=http://<mainnet executor admin host>:7081
-sdk/scripts/register-templates.sh "$EXECUTOR_ADMIN"
-oracle/scripts/register-templates.sh "$EXECUTOR_ADMIN"
+sdk/scripts/register-templates.sh https://executor.arkade.sh renew
 for id in \
-  7bf0fc3fce5b08a6ffcf122bf88020871cbedd654be73c80fb2d48d15780f335 \
+  20514731164e0682fc39f178de619e390e0712c03d8192229a7580e51801efd5 \
   32d07de4874111c1bff5d654447d28e5c49877a27d861bd0999f0dabe38f3bd6 \
-  abb9af08fe162ae60e028b11f4e67e68a961b181642bfb59e7a1fac8b82588df
+  d3e29ce166a9fc6d22c3eb9a4d5b3d562f760d15c0f2819a7d9b4b51f85059f3 \
+  95d5be375613a188283773fceb2f5fb4eba20dac62e782bb605d8188e2ee5079
 do curl -s -o /dev/null -w "$id %{http_code}\n" https://executor.arkade.sh/v1/template/$id; done
 ```
-
-Mainnet runs arkd v0.9.26: do not add `renew` yet.
 
 ### 3.3 The oracle
 

@@ -322,24 +322,22 @@ describe("a market", () => {
     const d = await Desk.open();
     const executor = await Executor.connect(EXECUTOR_URL, d.engine.keys);
     if (!executor?.runs(TEMPLATES.renew_offer) || !executor.runs(TEMPLATES.renew_position)) return skip();
-    // arkd before v0.9.27 refuses a coin without an exit leaf in a batch: nothing can renew there
-    const { version } = (await (await fetch(`${ARK_URL}/v1/info`)).json()) as { version: string };
-    const [major, minor, patch] = version.replace(/^v/, "").split(/[.-]/).map(Number);
-    if (!(major > 0 || minor > 9 || (minor === 9 && patch >= 27))) return skip();
     for (const renewal of d.engine.renewalDelegations()) expect(await executor.delegate(renewal)).toBe(true);
     // registering the market's renewals again is harmless
     for (const renewal of d.engine.renewalDelegations()) expect(await executor.delegate(renewal)).toBe(true);
 
     await d.offer(10);
-    const [offer] = await eventually(async () => {
-      const open = await d.engine.offers();
-      expect(open).toHaveLength(1);
-      return open;
-    });
     const terms = d.tradeTerms(0, 2, 5_000);
     pay(d.engine.tradeDeposit(terms).address);
     await eventually(() => d.fill(terms, 10_000_000));
     const position = await d.position();
+    // the offer as the trade left it
+    const [offer] = await eventually(async () => {
+      const open = await d.engine.offers();
+      expect(open).toHaveLength(1);
+      expect(open[0].amount).toBe(2 * DEPOSIT - 5_000);
+      return open;
+    });
 
     const renewed = await eventually(async () => {
       const [o] = await d.engine.offers();

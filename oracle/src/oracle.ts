@@ -15,6 +15,7 @@ import {
 import { hex } from "@scure/base";
 import artifact from "../artifacts/dia_btc_usd_oracle.json";
 import templateIds from "../templates/ids.json";
+import renewTemplate from "../templates/renew_oracle.json";
 import type { PriceFeed, PriceUpdate } from "./dia.js";
 
 /** The extension packet a verified price is written in: 0x01, price in cents, time. */
@@ -64,6 +65,8 @@ export interface Delegation {
 
 /** The id of the template that renews an oracle's outputs, as an executor names it. */
 export const RENEW_TEMPLATE: string = templateIds.renew_oracle;
+
+export class ExecutorError extends Error {}
 
 export class NoOracleOutputError extends Error {
   constructor() {
@@ -157,6 +160,33 @@ export class DiaOracle {
         exit_delay: num(this.conn.exitDelay),
       },
     };
+  }
+
+  /**
+   * Has an executor renew every output of this oracle before it expires. It gives the executor
+   * the oracle's contract and renewal template when it lacks them, which an executor accepts on
+   * its public port only when it runs with `EXECUTOR_PUBLIC_REGISTRY=true`, then registers the
+   * delegation. Doing it again changes nothing.
+   */
+  async renewWith(executorUrl: string): Promise<void> {
+    const post = async (path: string, body: unknown) => {
+      const res = await fetch(`${executorUrl}/v1/${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new ExecutorError(`the executor refused the ${path}: ${(await res.text()).slice(0, 300)}`);
+      return (await res.json()) as { template?: { id: string } };
+    };
+    const known = await fetch(`${executorUrl}/v1/template/${RENEW_TEMPLATE}`).then((r) => r.ok);
+    if (!known) {
+      await post("artifact", { document: JSON.stringify(artifact) });
+      const { template } = await post("template", { document: JSON.stringify(renewTemplate) });
+      if (template?.id !== RENEW_TEMPLATE) {
+        throw new ExecutorError("the executor names the renewal template otherwise: templates/ids.json is stale");
+      }
+    }
+    await post("delegation", this.renewal());
   }
 
   /** The oracle's live outputs: the unspent coins at its script that hold one identity unit. */

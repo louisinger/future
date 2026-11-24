@@ -126,10 +126,10 @@ cancelling and withdrawing need the owner's signature at the time: a page does t
   open against an offer with a coin about to expire and shorten the life of the provider's
   remaining liquidity and of the position. The client refuses to open a trade that would
   outlive its coins, but the scripts cannot read another input's expiry.
-- **Renewal.** `renew` joins a batch, and arkd up to v0.9.26 refuses a coin without a
-  unilateral exit leaf there, which offers and positions do not have: on those versions nothing
-  can renew them. v0.9.27 accepts them. `renew` lets up to 1,000 sats leave per renewal as the
-  batch's fee. It has not been seen working end to end.
+- **Renewal.** `renew` joins a batch and lets up to 1,000 sats leave as its fee. arkd up to
+  v0.9.26 only takes a coin into a batch if its script has an exit leaf, so offers and
+  positions carry one whose key is the point of BIP 341 nobody can sign for: it is there for
+  arkd, not as a way out. Renewal depends on an executor that has the templates.
 - **A shared address can be spammed.** One delegation renews every coin at the offer address,
   another every coin at the position address. Anyone can send a coin there that the template
   cannot spend, and the executor disables a template refused ten times in a row: renewal can be
@@ -160,7 +160,7 @@ cancelling and withdrawing need the owner's signature at the time: a page does t
 - By hand in a browser: the page connects on mainnet, mutinynet and regtest and shows DIA's
   price; no horizontal overflow at 320 and 375 pixels on either page.
 - `renew_offer` and `renew_position` are built and executed in the engine, on a coin left by
-  an opened trade. On regtest the executor built and submitted both renewals and arkd v0.9.13
-  refused them for the missing exit leaf; they have not run on an arkd that accepts them.
+  an opened trade, and on regtest (arkd v0.9.13) executord renewed an offer and a position,
+  which then closed and withdrew as before.
 - Nothing has been traded on mutinynet or mainnet. The mainnet emulator is v0.0.9, the tests
   ran against v0.0.10: v0.0.9 has every opcode the contracts use, by reading its source.

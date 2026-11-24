@@ -18,7 +18,10 @@ describe("contract derivation", () => {
       keys,
     ).pkScript;
 
-  const market = { oracleTxid: new Uint8Array(32).fill(3), oracleGidx: 0n, renewalWindow: 86400n, maxFee: 1000n };
+  const market = {
+    oracleTxid: new Uint8Array(32).fill(3), oracleGidx: 0n, renewalWindow: 86400n, maxFee: 1000n,
+    exitKey: hex.decode("50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"), exitDelay: 4194308n,
+  };
   const position = script(ARTIFACTS.position, market);
   const offer = script(ARTIFACTS.offer, { ...market, positionProgram: position.slice(2) });
 

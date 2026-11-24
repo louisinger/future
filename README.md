@@ -73,8 +73,8 @@ need none:
 |---|---|---|
 | Publish an offer when its deposit is paid | `register_offer` | works, tested on regtest |
 | Refund a trade deposit that missed its deadline | `refund_trade` | works, tested on regtest |
-| Renew an offer before its coin expires | `renew_offer` | needs arkd v0.9.27, see below |
-| Renew a position before its coin expires | `renew_position` | needs arkd v0.9.27, see below |
+| Renew an offer before its coin expires | `renew_offer` | works, tested on regtest |
+| Renew a position before its coin expires | `renew_position` | works, tested on regtest |
 | Renew the oracle's coins before they expire | `renew_oracle`, in `oracle/` | works, tested on regtest |
 
 Opening, closing, settling and liquidating need a price: a page does those. Cancelling and
@@ -85,20 +85,21 @@ address it creates, and registers the market's renewal delegations, which cover 
 every position and the oracle's coins. Without the templates the page does the first two steps itself while it is
 open, and nothing renews.
 
-Templates are registered on an executor's admin port, by its operator:
+Templates are registered on an executor's admin port, or on its public port when it runs with
+`EXECUTOR_PUBLIC_REGISTRY=true`:
 
 ```sh
-sdk/scripts/register-templates.sh http://localhost:7081          # publish and refund
-sdk/scripts/register-templates.sh http://localhost:7081 renew    # and the two renewals
-oracle/scripts/register-templates.sh http://localhost:7081       # the oracle's renewal
+sdk/scripts/register-templates.sh http://localhost:7081 renew    # publish, refund, renewals
 ```
 
-**Renewal does not work on arkd v0.9.26 and earlier**, which mainnet runs today. Offers and
-positions have no unilateral exit leaf, and those versions refuse such a coin in a batch
-(`INVALID_VTXO_SCRIPT: no exit leaf`); the executor's attempt on regtest (arkd v0.9.13) got
-exactly that answer. arkd v0.9.27 accepts them. Register the renewal templates only once the
-operator runs it: ten refusals in a row disable a template. Renewal has not been seen working
-end to end.
+The oracle's own renewal needs no separate step: deploying it with `--executor` gives the
+executor its contract and template and registers the renewal.
+
+Renewing means joining a batch, and arkd up to v0.9.26 only takes a coin into a batch if its
+script has an exit leaf. Offers and positions are shared addresses and cannot name an owner's
+key, so their exit leaf names the key of BIP 341 that nobody can sign for: it satisfies arkd and
+gives nobody a way out. The executor renewed an offer, a position and an oracle coin in one
+batch on regtest, on arkd v0.9.13.
 
 ## Layout
 
@@ -145,9 +146,9 @@ pnpm test:e2e                  # full market on a local regtest stack
 - DIA's key decides every price, and the oracle's admin key can replace the oracle's rules. A position that reached its end can be settled on any DIA
   price of the following hour, so whoever settles picks among them.
 - Offers and positions have no exit if the operator disappears. Deposits do.
-- Coins expire, and until the operator runs arkd v0.9.27 nothing can renew an offer or a
-  position: withdraw an offer and settle a position before their coins expire. The other side's
-  coin can also shorten yours.
+- Coins expire. An executor that has the templates renews offers, positions and the oracle's
+  coins; without one, withdraw an offer and settle a position before their coins expire. The
+  other side's coin can also shorten yours.
 - A trade opens or settles when someone's page is open, yours or anyone's: an executor cannot
   fetch a price.
 - Nothing has been traded on mainnet. The mainnet emulator runs an older version than the one

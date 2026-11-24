@@ -188,13 +188,14 @@ describe("an oracle output", () => {
     await eventually(async () => expect(await oracle.outputs()).toHaveLength(2));
   }, 180_000);
 
-  // Needs executord on :7080 with the oracle's template (scripts/register-templates.sh).
+  // Needs executord on :7080 taking templates on its public port (EXECUTOR_PUBLIC_REGISTRY=true),
+  // or already holding the oracle's.
   it("is renewed by an executor before it expires, and still serves consumers", async ({ skip }) => {
-    const registered = await fetch(`${EXECUTOR_URL}/v1/template/${RENEW_TEMPLATE}`).then(
+    const reachable = await fetch(`${EXECUTOR_URL}/v1/info`).then(
       (r) => r.ok,
       () => false,
     );
-    if (!registered) return skip();
+    if (!reachable) return skip();
     const own = await deploy(wallet, conn, feed, { adminPk: admin });
     const single = new DiaOracle(conn, own, feed);
     const [before] = await eventually(async () => {
@@ -203,11 +204,11 @@ describe("an oracle output", () => {
       return live;
     });
 
-    const res = await fetch(`${EXECUTOR_URL}/v1/delegation`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(single.renewal()),
-    });
+    await single.renewWith(EXECUTOR_URL);
+    expect((await fetch(`${EXECUTOR_URL}/v1/template/${RENEW_TEMPLATE}`)).ok).toBe(true);
+    // asking twice changes nothing
+    await single.renewWith(EXECUTOR_URL);
+    const res = await fetch(`${EXECUTOR_URL}/v1/delegation?address=${single.address}`);
     expect(res.ok).toBe(true);
     const { delegation } = (await res.json()) as { delegation: { id: string } };
     try {

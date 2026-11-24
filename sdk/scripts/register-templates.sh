@@ -1,11 +1,10 @@
 #!/bin/sh
 # Registers the market's contracts and templates on an executor, so it publishes offers and
-# refunds late deposits by itself. Templates are registered on the executor's admin port (7081 by
-# default), which only its operator can reach:
+# refunds late deposits by itself. An executor takes templates on its admin port (7081 by
+# default), and on its public port too when it runs with EXECUTOR_PUBLIC_REGISTRY=true:
 #   scripts/register-templates.sh http://localhost:7081
 # Add "renew" to also register the templates that renew offers and positions before their coins
-# expire. The operator must run arkd v0.9.27 or later: earlier versions refuse to take a coin
-# without an exit leaf into a batch, and ten refusals in a row disable a template.
+# expire:
 #   scripts/register-templates.sh http://localhost:7081 renew
 set -eu
 url=${1:?usage: register-templates.sh <executor admin url> [renew]}

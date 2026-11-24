@@ -864,6 +864,7 @@ func TestTemplates(t *testing.T) {
 				"position_program": m.position.PkScript[2:],
 				"renewal_window":   scriptNum(renewalWindow),
 				"max_fee":          scriptNum(maxFee),
+				"exit_delay":       scriptNum(exitDelay),
 			},
 			// an offer left by an opened trade: its transaction also carries the price and the
 			// position's note
@@ -889,6 +890,7 @@ func TestTemplates(t *testing.T) {
 				"oracle_gidx":    m.oracleGidx().Raw,
 				"renewal_window": scriptNum(renewalWindow),
 				"max_fee":        scriptNum(maxFee),
+				"exit_delay":     scriptNum(exitDelay),
 			},
 			source: newCoin(
 				t, m.position.PkScript, position.margin+position.houseMargin,
@@ -1028,11 +1030,13 @@ func newMarket(t *testing.T) *market {
 	m.position = m.build(t, "position", map[string]value{
 		"oracleTxid": m.oracleTxid(), "oracleGidx": m.oracleGidx(),
 		"renewalWindow": number(renewalWindow), "maxFee": number(maxFee),
+		"exitKey": unspendable(), "exitDelay": number(exitDelay),
 	})
 	m.offer = m.build(t, "offer", map[string]value{
 		"oracleTxid": m.oracleTxid(), "oracleGidx": m.oracleGidx(),
 		"positionProgram": bytes32(m.position.PkScript[2:]),
 		"renewalWindow":   number(renewalWindow), "maxFee": number(maxFee),
+		"exitKey": unspendable(), "exitDelay": number(exitDelay),
 	})
 	return m
 }
@@ -1064,6 +1068,13 @@ func (p priceSource) packets(t *testing.T) []extension.Packet {
 	packet, err := asset.NewPacket([]asset.AssetGroup{*group})
 	require.NoError(t, err)
 	return []extension.Packet{packet}
+}
+
+// unspendable is the key of the exit leaf of offers and positions: the point of BIP 341 nobody
+// knows the secret of. arkd up to v0.9.26 only takes a coin into a batch if it has an exit leaf.
+func unspendable() value {
+	raw, _ := hex.DecodeString("0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0")
+	return value{Type: "pubkey", Raw: raw}
 }
 
 func newAsset(t *testing.T) *asset.AssetId {

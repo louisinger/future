@@ -12,7 +12,9 @@
 //   --key      the funding wallet's key, hex; a new one is made and printed otherwise
 //   --explorer an esplora URL, for a local stack
 //   --out      a file to write the oracle's parameters to, besides printing them
-//   --executor an executor's public URL: once deployed, asks it to renew the oracle's outputs
+//   --executor an executor's URL: once deployed, gives it the oracle's contract and renewal
+//              template if it lacks them, and asks it to renew the oracle's outputs. The
+//              executor must run with EXECUTOR_PUBLIC_REGISTRY=true, or already have them
 //
 // It prints an address and waits for it to hold lanes * sats, plus a little for the operator's
 // dust. The admin key can move the oracle to another script: keep its secret offline.
@@ -52,8 +54,13 @@ function signerKey(spec = "dia") {
   return spec;
 }
 
-// fail on a wrong operator, emulator or signer before any money moves
+// fail on a wrong operator, emulator, signer or executor before any money moves
 const conn = await connect({ arkUrl: args.ark, emulatorUrl: args.emulator });
+if (args.executor) {
+  const info = await fetch(`${args.executor}/v1/info`).then((r) => r.json());
+  const network = info.network === "bitcoin" ? "bitcoin" : info.network;
+  if (network !== conn.network) throw new Error(`the executor serves ${info.network}, the operator ${conn.network}`);
+}
 // deploying needs the signer's key, not its prices
 const feed = { key: hex.decode(signerKey(args.signer)), latest: () => Promise.reject(new Error("no feed")) };
 console.error(`network ${conn.network}, signer ${hex.encode(feed.key)}, ${lanes} outputs of ${sats} sats`);
@@ -81,11 +88,9 @@ const out = JSON.stringify({ ...params, address: oracle.address, network: conn.n
 if (args.out) writeFileSync(args.out, `${out}\n`);
 console.log(out);
 if (args.executor) {
-  const res = await fetch(`${args.executor}/v1/delegation`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(oracle.renewal()),
-  });
-  console.error(res.ok ? "the executor will renew the oracle's outputs" : `the executor refused the renewal: ${await res.text()}`);
+  await oracle.renewWith(args.executor).then(
+    () => console.error("the executor will renew the oracle's outputs"),
+    (e) => console.error(`${e.message}\nrun scripts/status.mjs with --register once it accepts templates`),
+  );
 }
 process.exit(0);

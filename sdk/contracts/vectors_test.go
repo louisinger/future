@@ -45,11 +45,13 @@ func TestVectors(t *testing.T) {
 	got := map[string]string{}
 	position := build("position", map[string]value{
 		"oracleTxid": oracleTxid, "oracleGidx": num(0), "renewalWindow": num(86400), "maxFee": num(1000),
+		"exitKey": unspendable(), "exitDelay": num(4194308),
 	})
 	positionProgram := value{Type: "bytes32", Raw: position.PkScript[2:]}
 	offer := build("offer", map[string]value{
 		"oracleTxid": oracleTxid, "oracleGidx": num(0), "positionProgram": positionProgram,
 		"renewalWindow": num(86400), "maxFee": num(1000),
+		"exitKey": unspendable(), "exitDelay": num(4194308),
 	})
 	offerDeposit := build("offer_deposit", map[string]value{
 		"offerProgram": {Type: "bytes32", Raw: offer.PkScript[2:]},
