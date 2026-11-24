@@ -44,6 +44,13 @@ export interface Oracle {
 
 export class OracleError extends Error {}
 
+/** DIA has several signers taking turns; a market's contracts take the prices of one. */
+export class OtherSignerError extends OracleError {
+  constructor() {
+    super("DIA's latest price is from a signer this market does not use, the next one is seconds away");
+  }
+}
+
 interface Signed {
   raw: bigint;
   time: bigint;
@@ -120,7 +127,7 @@ export function decodeDia(result: string): PriceUpdate {
   const signature = out.slice(at, at + 64);
   const key = hex.decode(DIA_KEY).subarray(1);
   if (signature.length !== 64 || !secp256k1.verify(signature, digest(u), key, { prehash: false, lowS: false })) {
-    throw new OracleError("DIA's price is not signed by the key the contracts trust");
+    throw new OtherSignerError();
   }
   return update(u, signature);
 }
@@ -151,6 +158,8 @@ const LATEST_UPDATE = JSON.stringify({
  * DIA's live BTC/USD price, read from its public RPC with no key and no account. However often it
  * is asked, it sends one request per update DIA publishes, shares it between callers, and backs
  * off when DIA does not answer, serving the last update for as long as the contracts take it.
+ * The registry only tells its latest update: when that one is another signer's, it asks again
+ * a few seconds later.
  */
 export function dia(request: typeof fetch = (...a) => fetch(...a)): Oracle {
   let last: PriceUpdate | undefined;
@@ -174,7 +183,8 @@ export function dia(request: typeof fetch = (...a) => fetch(...a)): Oracle {
       failures = 0;
       return last;
     } catch (e) {
-      retryAt = Date.now() + Math.min(MAX_RETRY_MS, FIRST_RETRY_MS * 2 ** failures++);
+      const wait = e instanceof OtherSignerError ? FIRST_RETRY_MS : FIRST_RETRY_MS * 2 ** failures++;
+      retryAt = Date.now() + Math.min(MAX_RETRY_MS, wait);
       throw e;
     }
   };

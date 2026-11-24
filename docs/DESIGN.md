@@ -102,7 +102,8 @@ time, which an executor cannot do: a page does those.
 - **DIA.** Its key decides every price: a wrong or stolen signature settles trades at a wrong
   price. If DIA stops publishing or rotates its key, open positions cannot settle at all, since
   every settlement needs a price signed by the key in the address; offers can still be
-  withdrawn and deposits cancelled. There is no fallback oracle and no way to change the key of
+  withdrawn and deposits cancelled. DIA has two signers taking turns and the contracts take
+  only one of them, the one signing most updates: if that one stops, the other does not help. There is no fallback oracle and no way to change the key of
   an open market.
 - **Which price settles.** A position past its end, or liquidated, settles on any DIA update
   that is newer than its start (its end, for an expired one) and under an hour old. Whoever

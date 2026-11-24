@@ -223,7 +223,7 @@ describe("a market", () => {
   it("opens and closes a trade on DIA's live signed price", async () => {
     const d = await Desk.open(dia());
     await d.offer(10);
-    const { price } = await d.engine.oracle.latest();
+    const { price } = await eventually(() => d.engine.oracle.latest(), 60);
 
     const terms = {
       ...d.tradeTerms(0, 2, 5_000),

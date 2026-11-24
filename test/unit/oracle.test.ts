@@ -2,11 +2,26 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hex } from "@scure/base";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import positionArtifact from "../../contracts/artifacts/position.json";
-import { DIA_DOMAIN, DIA_INTENT, OracleError, decodeDia, dia, localOracle, scriptNum } from "../../src/oracle";
+import {
+  DIA_DOMAIN,
+  DIA_INTENT,
+  OracleError,
+  OtherSignerError,
+  decodeDia,
+  dia,
+  localOracle,
+  scriptNum,
+} from "../../src/oracle";
 import sample from "./testdata/dia.json";
 
 // A response of DIA's registry, recorded from its public RPC.
 const answer = () => new Response(JSON.stringify({ result: sample.result }));
+// The same update with another price: its signature is no longer the pinned signer's.
+const otherSigner = () => {
+  const words = sample.result.slice(2).match(/.{64}/g) as string[];
+  words[7] = (BigInt(`0x${words[7]}`) + 1n).toString(16).padStart(64, "0");
+  return `0x${words.join("")}`;
+};
 
 describe("decodeDia", () => {
   it("reads a real update and rounds its price to the cent", () => {
@@ -18,9 +33,7 @@ describe("decodeDia", () => {
   });
 
   it("refuses an update whose price is not the one signed", () => {
-    const words = sample.result.slice(2).match(/.{64}/g) as string[];
-    words[7] = (BigInt(`0x${words[7]}`) + 1n).toString(16).padStart(64, "0");
-    expect(() => decodeDia(`0x${words.join("")}`)).toThrow("not signed by the key");
+    expect(() => decodeDia(otherSigner())).toThrow(OtherSignerError);
   });
 
   it.each(["", "0x", "0xzz", `0x${"00".repeat(32 * 12)}`])("refuses %j", (result) => {
@@ -78,6 +91,34 @@ describe("dia", () => {
 
     vi.advanceTimersByTime(60_000);
     await expect(oracle.latest()).rejects.toThrow(OracleError);
+  });
+
+  it("keeps the last update and asks again soon when the latest is another signer's", async () => {
+    let other = false;
+    const request = vi.fn(
+      async () => new Response(JSON.stringify({ result: other ? otherSigner() : sample.result })),
+    );
+    const oracle = dia(request);
+    const first = await oracle.latest();
+
+    other = true;
+    for (let asked = 2; asked <= 4; asked++) {
+      vi.advanceTimersByTime(21_000);
+      expect(await oracle.latest()).toBe(first);
+      expect(request).toHaveBeenCalledTimes(asked);
+      vi.advanceTimersByTime(4_000);
+      expect(await oracle.latest()).toBe(first);
+      expect(request).toHaveBeenCalledTimes(asked);
+    }
+  });
+
+  it("has no price while the only update seen is another signer's", async () => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ result: otherSigner() })));
+    const oracle = dia(request);
+    await expect(oracle.latest()).rejects.toThrow(OtherSignerError);
+    vi.advanceTimersByTime(5_000);
+    await expect(oracle.latest()).rejects.toThrow(OtherSignerError);
+    expect(request).toHaveBeenCalledTimes(2);
   });
 
   it("fails without a first answer and waits before asking again", async () => {
