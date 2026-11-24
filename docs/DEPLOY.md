@@ -59,11 +59,13 @@ node oracle/scripts/deploy.mjs \
   --emulator https://emulator.mutinynet.arkade.sh \
   --executor https://executor.mutinynet.arkade.sh \
   --admin "$ADMIN_MUTINYNET" \
+  --key-file ~/.arkade-oracle-funding-mutinynet.key \
   --lanes 3 --sats 10000 \
   --out oracle.mutinynet.json
 ```
 
-It prints a funding key and `send 31000 sats to tark1…`, then waits. Pay that address from an
+It prints `send 31000 sats to tark1…`, then waits. The funding wallet's key stays in the key
+file, never on screen. Pay that address from an
 Arkade wallet on Mutinynet. It then issues the token, creates the three oracle coins, gives
 the executor the oracle's contract and renewal template, asks it to renew the coins and writes
 `oracle.mutinynet.json`. Prices are DIA's, from its documented
@@ -127,6 +129,7 @@ node oracle/scripts/deploy.mjs \
   --emulator https://emulator.arkade.computer \
   --executor https://executor.arkade.sh \
   --admin "$ADMIN_MAINNET" \
+  --key-file ~/.arkade-oracle-funding-mainnet.key \
   --lanes 3 --sats 10000 \
   --out oracle.mainnet.json
 ```

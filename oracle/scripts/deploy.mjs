@@ -9,7 +9,9 @@
 //              derived from a seed, as a local stack uses
 //   --lanes    how many outputs, so that many transactions can read a price at once (default 3)
 //   --sats     what each output holds, which pays its renewals' fees (default 10000)
-//   --key      the funding wallet's key, hex; a new one is made and printed otherwise
+//   --key-file a file holding the funding wallet's key; it is made, readable by you alone, if it
+//              does not exist, and the key is never printed
+//   --key      the funding wallet's key, hex; without it or --key-file a new one is printed
 //   --explorer an esplora URL, for a local stack
 //   --out      a file to write the oracle's parameters to, besides printing them
 //   --executor an executor's URL: once deployed, gives it the oracle's contract and renewal
@@ -18,7 +20,7 @@
 //
 // It prints an address and waits for it to hold lanes * sats, plus a little for the operator's
 // dust. The admin key can move the oracle to another script: keep its secret offline.
-import { writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
   EsploraProvider,
   InMemoryContractRepository,
@@ -65,7 +67,17 @@ if (args.executor) {
 const feed = { key: hex.decode(signerKey(args.signer)), latest: () => Promise.reject(new Error("no feed")) };
 console.error(`network ${conn.network}, signer ${hex.encode(feed.key)}, ${lanes} outputs of ${sats} sats`);
 
-const identity = args.key ? SingleKey.fromHex(args.key) : SingleKey.fromRandomBytes();
+function fundingKey() {
+  if (args.key) return args.key;
+  const file = args["key-file"];
+  if (!file) return undefined;
+  if (!existsSync(file)) {
+    writeFileSync(file, `${hex.encode(secp256k1.utils.randomSecretKey())}\n`, { mode: 0o600, flag: "wx" });
+  }
+  return readFileSync(file, "utf8").trim();
+}
+const key = fundingKey();
+const identity = key ? SingleKey.fromHex(key) : SingleKey.fromRandomBytes();
 const wallet = await Wallet.create({
   identity,
   operatorProvider: new RestOperatorProvider(args.ark),
@@ -78,7 +90,7 @@ const wallet = await Wallet.create({
   settlement: false,
 });
 const needed = lanes * sats + 1_000;
-if (!args.key) console.error("funding wallet key (keep it until the oracle is live):", identity.toHex());
+if (!key) console.error("funding wallet key (keep it until the oracle is live):", identity.toHex());
 console.error(`send ${needed} sats to ${await wallet.getAddress()}`);
 while ((await wallet.getBalance()).available < needed) await new Promise((r) => setTimeout(r, 3_000));
 
