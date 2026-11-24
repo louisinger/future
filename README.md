@@ -4,7 +4,8 @@ A leveraged BTC/USD market with no house and no backend. It is one static page: 
 address, you pay it from any Arkade wallet, and every later step is a transaction the page
 builds and the Arkade emulator checks. `how.html` draws every contract and every transaction.
 
-**Live: https://louisinger.github.io/future/** — Mutinynet by default, with a switch to mainnet.
+**Live: https://louisinger.github.io/future/** — mainnet by default, with a switch to Mutinynet
+for test coins.
 
 **New and unaudited.** On mainnet it moves real bitcoin: read
 [what it does not protect against](docs/DESIGN.md#what-it-does-not-protect-against) first.
@@ -29,8 +30,8 @@ The header switches network; `?net=` in the address does the same.
 
 | | Operator | Emulator | Executor | Price |
 |---|---|---|---|---|
-| `mainnet` | `arkade.computer` | `emulator.arkade.computer` | `executor.arkade.sh` | DIA |
-| `mutinynet` (default) | `mutinynet.arkade.sh` | `emulator.mutinynet.arkade.sh` | `executor.mutinynet.arkade.sh` | DIA |
+| `mainnet` (default) | `arkade.computer` | `emulator.arkade.computer` | `executor.arkade.sh` | DIA |
+| `mutinynet` | `mutinynet.arkade.sh` | `emulator.mutinynet.arkade.sh` | `executor.mutinynet.arkade.sh` | DIA |
 | `regtest` | `localhost:7070` | `localhost:7073` | `localhost:7080` | a test key, you set the price |
 
 Each network is a separate market with its own key and addresses in the browser.

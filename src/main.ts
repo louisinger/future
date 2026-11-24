@@ -39,7 +39,7 @@ const NETWORKS = {
   },
 };
 type Net = keyof typeof NETWORKS;
-// The network is the one in the address, else the one last chosen in this browser, else test coins.
+// The network is the one in the address, else the one last chosen in this browser, else mainnet.
 const net: Net = (() => {
   let asked = new URLSearchParams(location.search).get("net");
   try {
@@ -47,7 +47,7 @@ const net: Net = (() => {
   } catch {
     // no storage: the address decides
   }
-  return asked && asked in NETWORKS ? (asked as Net) : "mutinynet";
+  return asked && asked in NETWORKS ? (asked as Net) : "mainnet";
 })();
 // On a local stack the page signs prices itself, with a key anyone can read here.
 const TEST_ORACLE_SEED = "arkade-futures-demo-oracle";
