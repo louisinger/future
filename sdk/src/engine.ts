@@ -1,30 +1,26 @@
 // The market's client. It derives the market's addresses, reads its state from the indexer and
 // builds every transaction, which the Arkade emulator checks and cosigns. It holds no funds.
 
+import { ArkAddress, Extension, type RestIndexerProvider, Transaction, UnknownPacket, arkade } from "@arkade-os/sdk";
 import {
-  ArkAddress,
-  Extension,
-  RestEmulatorProvider,
-  RestIndexerProvider,
-  RestOperatorProvider,
-  Transaction,
-  UnknownPacket,
-  arkade,
-  networks,
-} from "@arkade-os/sdk";
+  type Connection,
+  type Delegation,
+  DiaOracle,
+  type OracleParams,
+  type PriceFeed,
+  type PriceUpdate,
+  connect,
+  dia,
+  scriptNum,
+} from "@louisinger/dia-oracle";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { base64, hex } from "@scure/base";
+import offerArtifact from "../contracts/artifacts/offer.json";
+import offerDepositArtifact from "../contracts/artifacts/offer_deposit.json";
+import positionArtifact from "../contracts/artifacts/position.json";
+import tradeDepositArtifact from "../contracts/artifacts/trade_deposit.json";
 import templateIds from "../contracts/testdata/templates.json";
-import diaOffer from "../contracts/artifacts/dia/offer.json";
-import diaOfferDeposit from "../contracts/artifacts/dia/offer_deposit.json";
-import diaPosition from "../contracts/artifacts/dia/position.json";
-import diaTradeDeposit from "../contracts/artifacts/dia/trade_deposit.json";
-import schnorrOffer from "../contracts/artifacts/schnorr/offer.json";
-import schnorrOfferDeposit from "../contracts/artifacts/schnorr/offer_deposit.json";
-import schnorrPosition from "../contracts/artifacts/schnorr/position.json";
-import schnorrTradeDeposit from "../contracts/artifacts/schnorr/trade_deposit.json";
-import { type Oracle, type OracleScheme, type PriceUpdate, scriptNum } from "./oracle.js";
 import {
   type Coin,
   type Offer,
@@ -34,6 +30,7 @@ import {
   type Settlement,
   type TradeTerms,
   DUST_FOLD,
+  NoOfferError,
   candidates,
   ending,
   match,
@@ -50,16 +47,18 @@ const OFFER_STATE_SIZE = 97;
 const POSITION_STATE_SIZE = 161;
 const RENEWAL_WINDOW = 86_400n;
 const MAX_FEE = 1_000n;
+// The key of the exit leaf of offers and positions: the point of BIP 341 nobody knows the secret
+// of. They are shared addresses and cannot name an owner's key, and arkd up to v0.9.26 only takes
+// a coin into a batch, to renew it, if its script has an exit leaf.
+// https://github.com/bitcoin/bips/blob/master/bip-0341.mediawiki#constructing-and-spending-taproot-outputs
+const UNSPENDABLE_KEY = "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0";
 
-/** The market's four contracts, built with the price check of each oracle scheme. */
-export const ARTIFACTS: Record<OracleScheme, Record<"position" | "offer" | "offerDeposit" | "tradeDeposit", unknown>> = {
-  dia: { position: diaPosition, offer: diaOffer, offerDeposit: diaOfferDeposit, tradeDeposit: diaTradeDeposit },
-  schnorr: {
-    position: schnorrPosition,
-    offer: schnorrOffer,
-    offerDeposit: schnorrOfferDeposit,
-    tradeDeposit: schnorrTradeDeposit,
-  },
+/** The market's four contracts. */
+export const ARTIFACTS = {
+  position: positionArtifact,
+  offer: offerArtifact,
+  offerDeposit: offerDepositArtifact,
+  tradeDeposit: tradeDepositArtifact,
 };
 
 type Contract = arkade.ArkadeContract;
@@ -74,22 +73,13 @@ export interface Deposit {
   script: string;
 }
 
-/**
- * The ids of the market's executor templates, as an executor names them. They are built on the
- * DIA contracts: a market on another oracle scheme has none.
- */
+/** The ids of the market's executor templates, as an executor names them. */
 export const TEMPLATES: {
   register_offer: string;
   refund_trade: string;
   renew_offer: string;
   renew_position: string;
 } = templateIds;
-
-/** What an executor needs to run one of the market's templates for an address. */
-export interface Delegation {
-  template: string;
-  variables: Record<string, string>;
-}
 
 export class NoCoinError extends Error {
   constructor() {
@@ -141,59 +131,58 @@ const big = BigInt;
 export class Engine {
   readonly network: string;
   readonly dust: number;
+  private readonly client: arkade.Arkade;
+  private readonly indexer: RestIndexerProvider;
   private readonly exitDelay: bigint;
-  private readonly artifacts: (typeof ARTIFACTS)[OracleScheme];
   private readonly position: Contract;
   private readonly offer: Contract;
 
   private constructor(
-    private readonly client: arkade.Arkade,
-    private readonly indexer: RestIndexerProvider,
-    info: { network: string; dust: number; exitDelaySeconds: number },
-    readonly oracle: Oracle,
+    conn: Connection,
+    /** The oracle output the market's contracts read prices from. */
+    readonly oracle: DiaOracle,
   ) {
-    this.network = info.network;
-    this.dust = info.dust;
-    // BIP68: seconds are counted in units of 512 with bit 22 set
-    const delay = info.exitDelaySeconds;
-    this.exitDelay = big(delay >= 512 ? (1 << 22) | Math.floor(delay / 512) : delay);
-    const market = { oraclePk: oracle.key, renewalWindow: RENEWAL_WINDOW, maxFee: MAX_FEE };
-    this.artifacts = ARTIFACTS[oracle.scheme];
-    this.position = client.contract(load(this.artifacts.position), market);
-    this.offer = client.contract(load(this.artifacts.offer), { ...market, positionProgram: program(this.position.pkScript) });
+    this.client = conn.client;
+    this.indexer = conn.indexer;
+    this.network = conn.network;
+    this.dust = conn.dust;
+    this.exitDelay = conn.exitDelay;
+    const market = {
+      ...this.oracleArgs,
+      renewalWindow: RENEWAL_WINDOW,
+      maxFee: MAX_FEE,
+      exitKey: hex.decode(UNSPENDABLE_KEY),
+      exitDelay: this.exitDelay,
+    };
+    this.position = this.client.contract(load(ARTIFACTS.position), market);
+    this.offer = this.client.contract(load(ARTIFACTS.offer), {
+      ...market,
+      positionProgram: program(this.position.pkScript),
+    });
   }
 
   /**
-   * Reads the operator's and the emulator's parameters and derives the market's two scripts, which
-   * settle on the prices of `oracle` and no other.
+   * Reads the operator's and the emulator's parameters and derives the market's two scripts,
+   * which take prices from the oracle `oracle` names and no other. `feed` is where prices are
+   * fetched: DIA's, read for the signer the oracle trusts, unless given.
    */
-  static async connect(cfg: { arkUrl: string; emulatorUrl: string; oracle: Oracle }): Promise<Engine> {
-    const operator = new RestOperatorProvider(cfg.arkUrl);
-    const emulator = new RestEmulatorProvider(cfg.emulatorUrl);
-    const indexer = new RestIndexerProvider(cfg.arkUrl);
-    const [info, emulatorInfo] = await Promise.all([operator.getInfo(), emulator.getInfo()]);
-    const network = networks[info.network as keyof typeof networks] ?? networks.regtest;
-    // The SDK pins the emulator key of public networks; a local stack has its own.
-    const local = info.network === "regtest";
-    const client = await arkade.Arkade.connect({
-      arkade: operator,
-      emulator,
-      indexer,
-      network,
-      ...(local ? { emulatorPubkey: emulatorInfo.signerPubkey } : {}),
-    });
-    if (!local && client.emulatorKey && !sameKey(client.emulatorKey, hex.decode(emulatorInfo.signerPubkey))) {
-      throw new Error("the emulator's key is not the one this app trusts for this network");
-    }
-    if (Number(info.dust) > DUST_FOLD) {
+  static async connect(cfg: {
+    arkUrl: string;
+    emulatorUrl: string;
+    oracle: OracleParams;
+    feed?: PriceFeed;
+  }): Promise<Engine> {
+    const conn = await connect(cfg);
+    if (conn.dust > DUST_FOLD) {
       throw new Error("this operator's smallest coin is larger than the contracts allow for");
     }
-    return new Engine(
-      client,
-      indexer,
-      { network: info.network, dust: Number(info.dust), exitDelaySeconds: Number(info.unilateralExitDelay) },
-      cfg.oracle,
-    );
+    const oracle = new DiaOracle(conn, cfg.oracle, cfg.feed ?? dia({ key: cfg.oracle.oraclePk }));
+    return new Engine(conn, oracle);
+  }
+
+  /** The newest signed price. */
+  latest(): Promise<PriceUpdate> {
+    return this.oracle.feed.latest();
   }
 
   /** The operator's and the emulator's keys, x-only. */
@@ -316,11 +305,10 @@ export class Engine {
 
   /** What an executor needs to turn a payment to the offer deposit of terms into an offer. */
   offerDelegation(t: OfferTerms): Delegation {
-    this.requireTemplates();
     return {
-      template: TEMPLATES.register_offer,
+      templateId: TEMPLATES.register_offer,
       variables: {
-        oracle_pk: hex.encode(this.oracle.key),
+        ...this.oracleVariables,
         renewal_window: num(RENEWAL_WINDOW),
         max_fee: num(MAX_FEE),
         position_program: hex.encode(program(this.position.pkScript)),
@@ -337,11 +325,10 @@ export class Engine {
 
   /** What an executor needs to refund the trade deposit of terms once its deadline has passed. */
   refundDelegation(t: TradeTerms): Delegation {
-    this.requireTemplates();
     return {
-      template: TEMPLATES.refund_trade,
+      templateId: TEMPLATES.refund_trade,
       variables: {
-        oracle_pk: hex.encode(this.oracle.key),
+        ...this.oracleVariables,
         position_program: hex.encode(program(this.position.pkScript)),
         trader_pk: t.traderPk,
         trader_program: t.traderProgram,
@@ -359,22 +346,24 @@ export class Engine {
   }
 
   /**
-   * What an executor needs to renew every offer and every position of the market before its coin
-   * expires. They are the market's, not a user's: registering them again changes nothing.
+   * What an executor needs to renew every offer and every position of the market, and the
+   * oracle's outputs, before their coins expire. They are the market's, not a user's: registering
+   * them again changes nothing.
    */
   renewalDelegations(): Delegation[] {
-    this.requireTemplates();
     const market = {
-      oracle_pk: hex.encode(this.oracle.key),
+      ...this.oracleVariables,
       renewal_window: num(RENEWAL_WINDOW),
       max_fee: num(MAX_FEE),
+      exit_delay: num(this.exitDelay),
     };
     return [
       {
-        template: TEMPLATES.renew_offer,
+        templateId: TEMPLATES.renew_offer,
         variables: { ...market, position_program: hex.encode(program(this.position.pkScript)) },
       },
-      { template: TEMPLATES.renew_position, variables: market },
+      { templateId: TEMPLATES.renew_position, variables: market },
+      this.oracle.renewal(),
     ];
   }
 
@@ -407,38 +396,30 @@ export class Engine {
     if (coin.expiresAt > 0 && terms.duration > maxDuration(coin.expiresAt, now())) {
       throw new Error("your payment's coin expires before the trade would");
     }
-    const quote = await this.oracle.latest();
+    const offers = await this.offers();
+    const seen = await this.latest();
     let failure: unknown;
-    for (const q of candidates(terms, coin.amount, quote.price, await this.offers(), this.dust, now())) {
-      const state = concat(
-        Uint8Array.of(1),
-        le8(terms.side),
-        le8(q.entryPrice),
-        le8(q.notional),
-        le8(q.margin),
-        le8(q.houseMargin),
-        le8(quote.time),
-        le8(quote.time + terms.duration),
-        xonly(terms.traderPk),
-        hex.decode(terms.traderProgram),
-        hex.decode(q.offer.lpProgram),
-        le8(q.offer.carryBps),
-      );
+    for (const candidate of candidates(terms, coin.amount, seen.price, offers, this.dust, now())) {
+      let opened: Quote | undefined;
       try {
-        await this.send(
-          this.client
-            .transaction()
-            .from(utxo(coin), contract.unlock.fill({ arkadeScript: quote.witness }))
-            .from(utxo(q.offer), this.offer.unlock.fill({ arkadeScript: quote.witness }))
-            .to([
-              { script: this.position.pkScript, amount: big(q.margin + q.houseMargin) },
-              { script: this.offer.pkScript, amount: big(q.offer.amount - q.houseMargin) },
-            ])
-            .withPacket(quotePacket(quote))
-            .withPacket(new UnknownPacket(OFFER_PACKET, offerState(q.offer)))
-            .withPacket(new UnknownPacket(POSITION_PACKET, state)),
+        await this.oracle.spend(
+          () => this.client.transaction().from(utxo(coin), contract.unlock.fill()),
+          (tx, quote) => {
+            // the price is the one of the oracle output this attempt spends
+            const [q] = candidates(terms, coin.amount, quote.price, [candidate.offer], this.dust, now());
+            if (!q) throw new NoOfferError("the price moved out of this offer's reach");
+            opened = q;
+            return tx
+              .from(utxo(q.offer), this.offer.unlock.fill())
+              .to([
+                { script: this.position.pkScript, amount: big(q.margin + q.houseMargin) },
+                { script: this.offer.pkScript, amount: big(q.offer.amount - q.houseMargin) },
+              ])
+              .withPacket(new UnknownPacket(OFFER_PACKET, offerState(q.offer)))
+              .withPacket(new UnknownPacket(POSITION_PACKET, positionState(terms, q, quote.time)));
+          },
         );
-        return q;
+        if (opened) return opened;
       } catch (e) {
         failure = e;
       }
@@ -463,28 +444,25 @@ export class Engine {
    * exhausted. Returns the price it settled at.
    */
   async resolve(p: Position): Promise<PriceUpdate> {
-    const quote = await this.oracle.latest();
-    await this.send(
-      this.client
-        .transaction()
-        .from(utxo(p), this.position.unlock.resolve({ arkadeScript: quote.witness }))
-        .to(settlement(p, quote.price, quote.time))
-        .withPacket(quotePacket(quote)),
+    const { update } = await this.oracle.spend(
+      () => this.client.transaction().from(utxo(p), this.position.unlock.resolve()),
+      (tx, quote) => tx.to(settlement(p, quote.price, quote.time)),
     );
-    return quote;
+    return update;
   }
 
   /** Settles a position at the oracle's latest price on the trader's signature. */
   async close(p: Position, key: string): Promise<PriceUpdate> {
-    const quote = await this.oracle.latest();
-    await this.signedSpend("close", key, (sig) =>
-      this.client
-        .transaction()
-        .from(utxo(p), this.position.unlock.close({ arkadeScript: [sig, ...quote.witness] }))
-        .to(settlement(p, quote.price, quote.time))
-        .withPacket(quotePacket(quote)),
-    );
-    return quote;
+    const start = (sig: Uint8Array) => () =>
+      this.client.transaction().from(utxo(p), this.position.unlock.close({ arkadeScript: [sig] }));
+    const finish = (tx: arkade.ArkadeTransactionBuilder, quote: PriceUpdate) =>
+      tx.to(settlement(p, quote.price, quote.time));
+    // the signature covers the position's outpoint, which no price or oracle output changes
+    const draft = start(new Uint8Array(64))();
+    const { update: drafted } = await this.oracle.attach(draft);
+    const sig = await signOutpoint("close", key, finish(draft, drafted));
+    const { update } = await this.oracle.spend(start(sig), finish);
+    return update;
   }
 
   /** Pays an offer back to its provider's program on the provider's signature. */
@@ -498,7 +476,7 @@ export class Engine {
   }
 
   private offerDepositContract(t: OfferTerms): Contract {
-    return this.client.contract(load(this.artifacts.offerDeposit), {
+    return this.client.contract(load(ARTIFACTS.offerDeposit), {
       offerProgram: program(this.offer.pkScript),
       lpPk: xonly(t.lpPk),
       lpProgram: hex.decode(t.lpProgram),
@@ -511,8 +489,8 @@ export class Engine {
   }
 
   private tradeDepositContract(t: TradeTerms): Contract {
-    return this.client.contract(load(this.artifacts.tradeDeposit), {
-      oraclePk: this.oracle.key,
+    return this.client.contract(load(ARTIFACTS.tradeDeposit), {
+      ...this.oracleArgs,
       positionProgram: program(this.position.pkScript),
       traderPk: xonly(t.traderPk),
       traderProgram: hex.decode(t.traderProgram),
@@ -528,8 +506,14 @@ export class Engine {
     });
   }
 
-  private requireTemplates(): void {
-    if (this.oracle.scheme !== "dia") throw new Error("there are no executor templates for this oracle");
+  /** The oracle's identity as the market's contracts hold it. */
+  private get oracleArgs(): { oracleTxid: Uint8Array; oracleGidx: bigint } {
+    return { oracleTxid: this.oracle.id["oracleId.txid"], oracleGidx: this.oracle.id["oracleId.gidx"] };
+  }
+
+  /** The same, as the variables of an executor template. */
+  private get oracleVariables(): { oracle_txid: string; oracle_gidx: string } {
+    return { oracle_txid: hex.encode(this.oracleArgs.oracleTxid), oracle_gidx: num(this.oracleArgs.oracleGidx) };
   }
 
   /** The notes of transactions, by transaction id; one that cannot be read is left out. */
@@ -593,14 +577,7 @@ export class Engine {
     key: string,
     build: (sig: Uint8Array) => arkade.ArkadeTransactionBuilder,
   ): Promise<string> {
-    const draft = await build(new Uint8Array(64)).build();
-    const input = draft.arkTx.getInput(0);
-    if (!input.txid || input.index === undefined) throw new Error("the transaction has no input");
-    const vout = new Uint8Array(4);
-    new DataView(vout.buffer).setUint32(0, input.index, true);
-    // the script reads the transaction id in wire order, the reverse of its hex form
-    const message = sha256(concat(text(action), input.txid.slice().reverse(), vout));
-    return this.send(build(schnorr.sign(message, hex.decode(key))));
+    return this.send(build(await signOutpoint(action, key, build(new Uint8Array(64)))));
   }
 
   private async send(builder: arkade.ArkadeTransactionBuilder): Promise<string> {
@@ -647,8 +624,31 @@ function readPosition(coin: Coin, s: Uint8Array): Position | undefined {
   }
 }
 
-function quotePacket(q: PriceUpdate): UnknownPacket {
-  return new UnknownPacket(QUOTE_PACKET, concat(Uint8Array.of(1), le8(q.price), le8(q.time)));
+/** The signature a contract checks over `action` and the outpoint a drafted transaction's first input spends. */
+async function signOutpoint(action: string, key: string, draft: arkade.ArkadeTransactionBuilder): Promise<Uint8Array> {
+  const input = (await draft.build()).arkTx.getInput(0);
+  if (!input.txid || input.index === undefined) throw new Error("the transaction has no input");
+  const vout = new Uint8Array(4);
+  new DataView(vout.buffer).setUint32(0, input.index, true);
+  // the script reads the transaction id in wire order, the reverse of its hex form
+  return schnorr.sign(sha256(concat(text(action), input.txid.slice().reverse(), vout)), hex.decode(key));
+}
+
+function positionState(terms: TradeTerms, q: Quote, startAt: number): Uint8Array {
+  return concat(
+    Uint8Array.of(1),
+    le8(terms.side),
+    le8(q.entryPrice),
+    le8(q.notional),
+    le8(q.margin),
+    le8(q.houseMargin),
+    le8(startAt),
+    le8(startAt + terms.duration),
+    xonly(terms.traderPk),
+    hex.decode(terms.traderProgram),
+    hex.decode(q.offer.lpProgram),
+    le8(q.offer.carryBps),
+  );
 }
 
 function num(n: number | bigint): string {

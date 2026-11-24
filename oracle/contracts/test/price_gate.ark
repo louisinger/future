@@ -1,0 +1,12 @@
+pragma arkade ^0.1.0;
+
+import "../dia_btc_usd_cents.ark";
+
+// A consumer for the oracle's tests: a coin anyone can spend while the price read from the
+// oracle output is at least minPrice.
+contract PriceGate(AssetId oracleId, int minPrice) {
+  function open() {
+    PriceQuote quote = DiaBtcUsdCents.readPrice(oracleId);
+    require(quote.price >= minPrice, "price");
+  }
+}

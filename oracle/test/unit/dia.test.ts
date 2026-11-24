@@ -1,25 +1,27 @@
-import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hex } from "@scure/base";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import positionArtifact from "../../contracts/artifacts/dia/position.json";
+import oracleArtifact from "../../artifacts/dia_btc_usd_oracle.json";
 import {
   DIA_DOMAIN,
   DIA_INTENT,
+  DIA_KEY,
+  DIA_SECOND_KEY,
   OracleError,
   OtherSignerError,
   decodeDia,
   dia,
-  localOracle,
-  schnorrOracle,
-  scriptNum,
-} from "../../src/oracle";
+  localFeed,
+} from "../../src/dia";
 import sample from "./testdata/dia.json";
+
+// The recorded update is signed by the second of DIA's two signers.
+const KEY = DIA_SECOND_KEY;
+const SIGNER = "6f8b0911b1c77de54e113e326ed4bac69da5c51c";
+const OTHER = "10e34723aa722c7a9860f5ec6446f22252db168a";
 
 // A response of DIA's registry, recorded from its public RPC.
 const answer = () => new Response(JSON.stringify({ result: sample.result }));
-const SIGNER = "6f8b0911b1c77de54e113e326ed4bac69da5c51c";
-const OTHER = "10e34723aa722c7a9860f5ec6446f22252db168a";
 const event = (hash: string, signer: string) => ({
   topics: ["0x00", `0x${hash.repeat(32)}`, "0x00", "0x00"],
   data: `0x${"00".repeat(44)}${signer}`,
@@ -48,26 +50,31 @@ const otherSigner = () => {
 
 describe("decodeDia", () => {
   it("reads a real update and rounds its price to the cent", () => {
-    const u = decodeDia(sample.result);
+    const u = decodeDia(sample.result, KEY);
     expect(u.time).toBe(sample.time);
     expect(u.price).toBe(Number((BigInt(sample.price) + 5n * 10n ** 15n) / 10n ** 16n));
-    expect(u.witness[0]).toEqual(scriptNum(BigInt(sample.price)));
-    expect(u.witness[3]).toHaveLength(64);
+    expect(u.rawPrice).toBe(BigInt(sample.price));
+    expect(u.expiry).toBe(BigInt(sample.time) + 3600n);
+    expect(u.signature).toHaveLength(64);
   });
 
   it("refuses an update whose price is not the one signed", () => {
-    expect(() => decodeDia(otherSigner())).toThrow(OtherSignerError);
+    expect(() => decodeDia(otherSigner(), KEY)).toThrow(OtherSignerError);
+  });
+
+  it("refuses the recorded update for DIA's other signer", () => {
+    expect(() => decodeDia(sample.result, DIA_KEY)).toThrow(OtherSignerError);
   });
 
   it.each(["", "0x", "0xzz", `0x${"00".repeat(32 * 12)}`])("refuses %j", (result) => {
-    expect(() => decodeDia(result)).toThrow(OracleError);
+    expect(() => decodeDia(result, KEY)).toThrow(OracleError);
   });
 });
 
-describe("the contracts", () => {
-  it("check the domain and the message type this client signs and verifies", () => {
-    const asm = JSON.stringify(positionArtifact);
-    expect(asm).toContain(`0x1901${hex.encode(DIA_DOMAIN)}`);
+describe("the oracle contract", () => {
+  it("checks the domain and the message type this client signs and verifies", () => {
+    const asm = JSON.stringify(oracleArtifact);
+    expect(asm).toContain(`0x${hex.encode(DIA_DOMAIN)}`);
     expect(asm).toContain(`0x${hex.encode(DIA_INTENT)}`);
   });
 });
@@ -83,7 +90,7 @@ describe("dia", () => {
 
   it("sends one request for many callers and reuses the update until DIA publishes again", async () => {
     const request = vi.fn(async () => answer());
-    const oracle = dia({ request });
+    const oracle = dia({ key: KEY, request });
     const [a, b] = await Promise.all([oracle.latest(), oracle.latest()]);
     expect(a).toBe(b);
     await oracle.latest();
@@ -97,7 +104,7 @@ describe("dia", () => {
   it("backs off when refused, serving the last update while the contracts still take it", async () => {
     let refuse = false;
     const request = vi.fn(async () => (refuse ? new Response("", { status: 429 }) : answer()));
-    const oracle = dia({ request });
+    const oracle = dia({ key: KEY, request });
     const first = await oracle.latest();
 
     refuse = true;
@@ -118,7 +125,7 @@ describe("dia", () => {
 
   it("reads the trusted signer's newest update when another signed the latest", async () => {
     const request = registry([SIGNER, OTHER, SIGNER, OTHER]);
-    const u = await dia({ request }).latest();
+    const u = await dia({ key: KEY, request }).latest();
     expect(u.time).toBe(sample.time);
     const calls = request.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as { method: string; params: { data?: string; fromBlock?: string }[] });
     expect(calls.map((c) => c.method)).toEqual(["eth_call", "eth_blockNumber", "eth_getLogs", "eth_call"]);
@@ -128,7 +135,7 @@ describe("dia", () => {
 
   it("has no price while only another signer has published lately, and asks again soon", async () => {
     const request = registry([OTHER, OTHER]);
-    const oracle = dia({ request });
+    const oracle = dia({ key: KEY, request });
     await expect(oracle.latest()).rejects.toThrow(OtherSignerError);
     await expect(oracle.latest()).rejects.toThrow(OracleError);
     expect(request).toHaveBeenCalledTimes(3);
@@ -139,65 +146,32 @@ describe("dia", () => {
 
   it("fails without a first answer and waits before asking again", async () => {
     const request = vi.fn(async () => new Response("", { status: 429 }));
-    const oracle = dia({ request });
+    const oracle = dia({ key: KEY, request });
     await expect(oracle.latest()).rejects.toThrow("DIA answered 429");
     await expect(oracle.latest()).rejects.toThrow(OracleError);
     expect(request).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("localOracle", () => {
-  it("signs the price it is given, dated just before now", async () => {
+describe("localFeed", () => {
+  it("signs the price it is given, dated just before now, in DIA's format", async () => {
     const secret = new Uint8Array(32).fill(9);
-    const oracle = localOracle(secret, () => 6_000_000);
-    const u = await oracle.latest();
+    const feed = localFeed(secret, () => 6_000_000);
+    const u = await feed.latest();
     expect(u.price).toBe(6_000_000);
+    expect(u.rawPrice).toBe(6_000_000n * 10n ** 16n);
     expect(Math.floor(Date.now() / 1000) - u.time).toBeGreaterThanOrEqual(5);
-    expect(oracle.key).toEqual(Uint8Array.of(0x10, ...secp256k1.getPublicKey(secret, true)));
-    expect(u.witness[0]).toEqual(scriptNum(6_000_000n * 10n ** 16n));
+    expect(feed.key).toEqual(Uint8Array.of(0x10, ...secp256k1.getPublicKey(secret, true)));
   });
 
   it("refuses to sign no price", async () => {
-    await expect(localOracle(new Uint8Array(32).fill(9), () => 0).latest()).rejects.toThrow(OracleError);
+    await expect(localFeed(new Uint8Array(32).fill(9), () => 0).latest()).rejects.toThrow(OracleError);
   });
 });
 
-describe("schnorrOracle", () => {
-  it("signs sha256(price | time) with its key", async () => {
-    const secret = new Uint8Array(32).fill(9);
-    const oracle = schnorrOracle(secret, async () => 6_000_000.4);
-    const u = await oracle.latest();
-    expect(oracle.scheme).toBe("schnorr");
-    expect(u.price).toBe(6_000_000);
-    const note = new Uint8Array(16);
-    new DataView(note.buffer).setBigUint64(0, 6_000_000n, true);
-    new DataView(note.buffer).setBigUint64(8, BigInt(u.time), true);
-    expect(schnorr.verify(u.witness[0], sha256(note), oracle.key)).toBe(true);
-  });
-
-  it("refuses to sign no price", async () => {
-    await expect(schnorrOracle(new Uint8Array(32).fill(9), () => 0).latest()).rejects.toThrow(OracleError);
-  });
-});
-
-describe("dia on another signer", () => {
-  it("refuses the recorded update, signed by the default one", () => {
-    const other = `10${hex.encode(secp256k1.getPublicKey(new Uint8Array(32).fill(7), true))}`;
-    expect(() => decodeDia(sample.result, other)).toThrow(OtherSignerError);
-    expect(hex.encode(dia({ key: other }).key)).toBe(other);
-  });
-});
-
-describe("scriptNum", () => {
-  it.each([
-    [0n, ""],
-    [1n, "01"],
-    [127n, "7f"],
-    [128n, "8000"],
-    [255n, "ff00"],
-    [256n, "0001"],
-    [1_795_538_283n, "6bbd056b"],
-  ])("%d", (n, want) => {
-    expect(hex.encode(scriptNum(n))).toBe(want);
+describe("dia", () => {
+  it("reads DIA's documented signer unless told another", () => {
+    expect(hex.encode(dia().key)).toBe(DIA_KEY);
+    expect(hex.encode(dia({ key: DIA_SECOND_KEY }).key)).toBe(DIA_SECOND_KEY);
   });
 });

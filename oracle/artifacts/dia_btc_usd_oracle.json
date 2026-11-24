@@ -1,0 +1,396 @@
+{
+  "formatVersion": 1,
+  "contractName": "DiaBtcUsdOracle",
+  "structs": [
+    {
+      "name": "PriceQuote",
+      "fields": [
+        {
+          "name": "price",
+          "type": "int"
+        },
+        {
+          "name": "time",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "constructorInputs": [
+    {
+      "name": "oracleId",
+      "type": "AssetId"
+    },
+    {
+      "name": "oraclePk",
+      "type": "bytes"
+    },
+    {
+      "name": "adminPk",
+      "type": "pubkey"
+    },
+    {
+      "name": "renewalWindow",
+      "type": "int"
+    },
+    {
+      "name": "maxFee",
+      "type": "int"
+    },
+    {
+      "name": "operatorExitDelay",
+      "type": "int"
+    }
+  ],
+  "functions": [
+    {
+      "name": "verify",
+      "arkade": {
+        "inputs": [
+          {
+            "name": "rawPrice",
+            "type": "int"
+          },
+          {
+            "name": "time",
+            "type": "int"
+          },
+          {
+            "name": "nonce",
+            "type": "int"
+          },
+          {
+            "name": "intentExpiry",
+            "type": "int"
+          },
+          {
+            "name": "oracleSig",
+            "type": "signature"
+          }
+        ],
+        "asm": [
+          "0x0000c16ff28623",
+          "OP_INSPECTNUMINPUTS",
+          "2",
+          "OP_GREATERTHANOREQUAL",
+          "OP_VERIFY",
+          "OP_2",
+          "OP_PICK",
+          "OP_CHECKTIME",
+          "OP_VERIFY",
+          "OP_4",
+          "OP_PICK",
+          "OP_CHECKTIME",
+          "OP_NOT",
+          "OP_VERIFY",
+          "<oraclePk>",
+          "OP_2",
+          "OP_PICK",
+          "OP_2",
+          "OP_PICK",
+          "OP_DIV",
+          "OP_3",
+          "OP_PICK",
+          "OP_3",
+          "OP_PICK",
+          "OP_MOD",
+          "5000000000000000",
+          "OP_GREATERTHANOREQUAL",
+          "OP_IF",
+          "OP_1ADD",
+          "OP_ENDIF",
+          "OP_DUP",
+          "0",
+          "OP_GREATERTHAN",
+          "OP_IF",
+          "OP_DUP",
+          "1000000000",
+          "OP_LESSTHANOREQUAL",
+          "OP_ELSE",
+          "OP_0",
+          "OP_ENDIF",
+          "OP_VERIFY",
+          "0x24e574fa7512cc24e9109b981256e33759d91bc2ee9b74a2bf633e013c0620b5",
+          "0xef9b6324ed493183babb66ed98fcf36e9bcb0243ae4c5a29fcd99184b08f1899",
+          "OP_CAT",
+          "0xe6bbd6277e1bf288eed5e8d1780f9a50b239e86b153736bceebccf4ea79d90b3",
+          "OP_CAT",
+          "0x1a04000000000000000000000000000000000000000000000000000000000000",
+          "OP_REVERSEBYTES",
+          "OP_CAT",
+          "OP_6",
+          "OP_PICK",
+          "32",
+          "OP_NUM2BIN",
+          "OP_REVERSEBYTES",
+          "OP_CAT",
+          "OP_7",
+          "OP_PICK",
+          "32",
+          "OP_NUM2BIN",
+          "OP_REVERSEBYTES",
+          "OP_CAT",
+          "0xee62665949c883f9e0f6f002eac32e00bd59dfe6c34e92a91c37d6a8322d6489",
+          "OP_CAT",
+          "OP_4",
+          "OP_PICK",
+          "32",
+          "OP_NUM2BIN",
+          "OP_REVERSEBYTES",
+          "OP_CAT",
+          "OP_5",
+          "OP_PICK",
+          "32",
+          "OP_NUM2BIN",
+          "OP_REVERSEBYTES",
+          "OP_CAT",
+          "0xf5a695b63ab16fd8278cb1cf7d29f274a9574b64e0b894750e08c990fc8891bc",
+          "OP_CAT",
+          "0x1901",
+          "0xf57d55f057fd4aba6b1a7f8bccb6a3e826cf71fd34971f22a39d7ffd6e620fb3",
+          "OP_CAT",
+          "OP_SWAP",
+          "4",
+          "OP_DIGEST",
+          "OP_SIZE",
+          "32",
+          "OP_EQUALVERIFY",
+          "OP_CAT",
+          "4",
+          "OP_DIGEST",
+          "OP_SIZE",
+          "32",
+          "OP_EQUALVERIFY",
+          "OP_8",
+          "OP_PICK",
+          "OP_3",
+          "OP_ROLL",
+          "OP_ROT",
+          "OP_SWAP",
+          "OP_CHECKSIGFROMSTACK",
+          "OP_VERIFY",
+          "34",
+          "OP_INSPECTPACKET",
+          "OP_VERIFY",
+          "0x01",
+          "OP_ROT",
+          "8",
+          "OP_NUM2BIN",
+          "OP_CAT",
+          "OP_4",
+          "OP_ROLL",
+          "8",
+          "OP_NUM2BIN",
+          "OP_CAT",
+          "OP_EQUALVERIFY",
+          "0",
+          "OP_INSPECTOUTPUTSCRIPTPUBKEY",
+          "OP_SWAP",
+          "OP_PUSHCURRENTINPUTINDEX",
+          "OP_INSPECTINPUTSCRIPTPUBKEY",
+          "OP_SWAP",
+          "OP_ROT",
+          "OP_EQUALVERIFY",
+          "OP_NUMEQUALVERIFY",
+          "0",
+          "OP_INSPECTOUTPUTVALUE",
+          "OP_PUSHCURRENTINPUTINDEX",
+          "OP_INSPECTINPUTVALUE",
+          "OP_GREATERTHANOREQUAL",
+          "OP_VERIFY",
+          "0",
+          "<oracleId.txid>",
+          "<oracleId.gidx>",
+          "OP_INSPECTOUTASSETLOOKUP",
+          "OP_VERIFY",
+          "1",
+          "OP_NUMEQUALVERIFY",
+          "OP_2DROP",
+          "OP_2DROP",
+          "OP_DROP",
+          "OP_1"
+        ]
+      },
+      "leaves": [
+        {
+          "name": "verify",
+          "witness": [
+            {
+              "name": "serverSig",
+              "type": "signature",
+              "encoding": "schnorr-64",
+              "injected": true
+            },
+            {
+              "name": "emulatorSig",
+              "type": "signature",
+              "encoding": "schnorr-64",
+              "injected": true
+            }
+          ],
+          "asm": [
+            "<SERVER_KEY>",
+            "OP_CHECKSIGVERIFY",
+            "<EMULATOR_KEY:verify>",
+            "OP_CHECKSIG"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "renew",
+      "arkade": {
+        "inputs": [],
+        "asm": [
+          "OP_PUSHEXPIRY",
+          "<renewalWindow>",
+          "OP_SUB",
+          "OP_CHECKTIME",
+          "OP_VERIFY",
+          "0x74797065",
+          "OP_INSPECTINTENTMESSAGE",
+          "OP_VERIFY",
+          "0x7265676973746572",
+          "OP_EQUALVERIFY",
+          "0x6f6e636861696e5f6f75747075745f696e6465786573",
+          "OP_INSPECTINTENTMESSAGE",
+          "OP_VERIFY",
+          "0x5b5d",
+          "OP_EQUALVERIFY",
+          "OP_PUSHCURRENTINPUTINDEX",
+          "1",
+          "OP_SUB",
+          "OP_DUP",
+          "OP_INSPECTOUTPUTVALUE",
+          "<maxFee>",
+          "OP_ADD",
+          "OP_PUSHCURRENTINPUTINDEX",
+          "OP_INSPECTINPUTVALUE",
+          "OP_GREATERTHANOREQUAL",
+          "OP_VERIFY",
+          "5",
+          "0",
+          "OP_TUNNEL"
+        ]
+      },
+      "leaves": [
+        {
+          "name": "renew",
+          "witness": [
+            {
+              "name": "serverSig",
+              "type": "signature",
+              "encoding": "schnorr-64",
+              "injected": true
+            },
+            {
+              "name": "emulatorSig",
+              "type": "signature",
+              "encoding": "schnorr-64",
+              "injected": true
+            }
+          ],
+          "asm": [
+            "<SERVER_KEY>",
+            "OP_CHECKSIGVERIFY",
+            "<EMULATOR_KEY:renew>",
+            "OP_CHECKSIG"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "migrate",
+      "arkade": {
+        "inputs": [
+          {
+            "name": "adminSig",
+            "type": "signature"
+          }
+        ],
+        "asm": [
+          "OP_INSPECTNUMINPUTS",
+          "1",
+          "OP_NUMEQUALVERIFY",
+          "<adminPk>",
+          "OP_CHECKSIGVERIFY",
+          "0",
+          "OP_INSPECTOUTPUTVALUE",
+          "OP_PUSHCURRENTINPUTINDEX",
+          "OP_INSPECTINPUTVALUE",
+          "OP_GREATERTHANOREQUAL",
+          "OP_VERIFY",
+          "0",
+          "<oracleId.txid>",
+          "<oracleId.gidx>",
+          "OP_INSPECTOUTASSETLOOKUP",
+          "OP_VERIFY",
+          "1",
+          "OP_NUMEQUAL"
+        ]
+      },
+      "leaves": [
+        {
+          "name": "migrate",
+          "witness": [
+            {
+              "name": "serverSig",
+              "type": "signature",
+              "encoding": "schnorr-64",
+              "injected": true
+            },
+            {
+              "name": "emulatorSig",
+              "type": "signature",
+              "encoding": "schnorr-64",
+              "injected": true
+            }
+          ],
+          "asm": [
+            "<SERVER_KEY>",
+            "OP_CHECKSIGVERIFY",
+            "<EMULATOR_KEY:migrate>",
+            "OP_CHECKSIG"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "unilateral",
+      "leaves": [
+        {
+          "name": "unilateral",
+          "witness": [
+            {
+              "name": "adminSig",
+              "type": "signature",
+              "encoding": "schnorr-64"
+            }
+          ],
+          "asm": [
+            "<operatorExitDelay>",
+            "OP_CHECKSEQUENCEVERIFY",
+            "OP_DROP",
+            "<adminPk>",
+            "OP_CHECKSIG"
+          ]
+        }
+      ]
+    }
+  ],
+  "source": {
+    "entry": "dia_btc_usd_oracle.ark",
+    "files": {
+      "dia_btc_usd_cents.ark": "pragma arkade ^0.1.0;\n\nstruct PriceQuote {\n  int price;\n  int time;\n}\n\n// Reusable DIA BTC/USD (in USD cents) verifier and quote reader.\n// verifyPrice checks DIA's EIP-712 OracleUpdate (Lasernet chain 1050, BTC/USD)\n// and rounds the 18-decimal price to USD cents. Callers add their own time rule.\n// readPrice lets consumers read the verified quote from packet 34 on input 1.\nlibrary DiaBtcUsdCents {\n  const int PACKET = 34;\n  const int SCALE = 10000000000000000;\n  const int HALF = 5000000000000000;\n  const int PRICE_MAX = 1000000000;\n  const bytes32 DOMAIN = 0xf57d55f057fd4aba6b1a7f8bccb6a3e826cf71fd34971f22a39d7ffd6e620fb3;\n  const bytes32 TYPEHASH = 0x24e574fa7512cc24e9109b981256e33759d91bc2ee9b74a2bf633e013c0620b5;\n  const bytes32 INTENT_TYPE = 0xef9b6324ed493183babb66ed98fcf36e9bcb0243ae4c5a29fcd99184b08f1899;\n  const bytes32 VERSION = 0xe6bbd6277e1bf288eed5e8d1780f9a50b239e86b153736bceebccf4ea79d90b3;\n  const bytes32 SYMBOL = 0xee62665949c883f9e0f6f002eac32e00bd59dfe6c34e92a91c37d6a8322d6489;\n  const bytes32 SOURCE = 0xf5a695b63ab16fd8278cb1cf7d29f274a9574b64e0b894750e08c990fc8891bc;\n\n  function word(int n) bytes {\n    return reverseBytes(int2bytes(n, 32));\n  }\n\n  function verifyPrice(\n    bytes oraclePk,\n    int rawPrice,\n    int time,\n    int nonce,\n    int intentExpiry,\n    signature sig\n  ) int {\n    int cents = rawPrice / SCALE;\n    if (rawPrice % SCALE >= HALF) {\n      cents = cents + 1;\n    }\n    require(cents > 0 && cents <= PRICE_MAX, \"price bounds\");\n\n    bytes body = TYPEHASH + INTENT_TYPE + VERSION\n      + word(1050) + word(nonce) + word(intentExpiry)\n      + SYMBOL + word(rawPrice) + word(time) + SOURCE;\n    bytes32 message = bytes32(digest(0x1901 + DOMAIN + bytes32(digest(body, 4)), 4));\n    require(checkSigFromStack(sig, oraclePk, message), \"bad oracle sig\");\n    return cents;\n  }\n\n  function readPrice(AssetId oracleId) PriceQuote {\n    require(tx.numInputs >= 2, \"oracle\");\n    require(tx.inputs[1].assets.lookup(oracleId) == 1, \"oracle\");\n    bytes quote = tx.packet(PACKET);\n    require(size(quote) == 17, \"quote size\");\n    require(substr(quote, 0, 1) == 0x01, \"quote version\");\n    int price = bytes2int(substr(quote, 1, 8));\n    int time = bytes2int(substr(quote, 9, 8));\n    require(price > 0 && price <= PRICE_MAX, \"price bounds\");\n    require(time > 0, \"time\");\n    return PriceQuote { price: price, time: time };\n  }\n}\n",
+      "dia_btc_usd_oracle.ark": "pragma arkade ^0.1.0;\n\nimport \"./dia_btc_usd_cents.ark\";\n\n// Recursive oracle output holding 1 unit of oracleId.\n// Consumers co-spend it as input 1. verify checks a live DIA signature on the\n// fly, pins (price, time) in tx.packet(DiaBtcUsdCents.PACKET), and continues\n// the output on output 0. adminPk rotates oraclePk via migrate without changing\n// consumers. renew lets anyone, such as an executor, take the output into a\n// batch before it expires.\n//\n// oracleId may have several units, each in an output of its own: consumers take\n// any of them, so spends of one do not wait on spends of another.\ncontract DiaBtcUsdOracle(\n  AssetId oracleId,\n  bytes oraclePk,\n  pubkey adminPk,\n  int renewalWindow,\n  int maxFee\n) {\n  function verify(\n    int rawPrice,\n    int time,\n    int nonce,\n    int intentExpiry,\n    signature oracleSig\n  ) {\n    require(tx.numInputs >= 2, \"consumer required\");\n    require(checkTime(time), \"future price\");\n    require(!checkTime(intentExpiry), \"expired intent\");\n    int price = DiaBtcUsdCents.verifyPrice(oraclePk, rawPrice, time, nonce, intentExpiry, oracleSig);\n    require(tx.packet(DiaBtcUsdCents.PACKET) == 0x01 + int2bytes(price, 8) + int2bytes(time, 8), \"quote packet\");\n    require(tx.outputs[0].script == tx.input.current.script, \"script\");\n    require(tx.outputs[0].value >= tx.input.current.value, \"value\");\n    require(tx.outputs[0].assets.lookup(oracleId) == 1, \"identity\");\n  }\n\n  // The batch output keeps this script and the identity unit; up to maxFee sats\n  // leave as the batch's fee.\n  function renew() {\n    require(checkTime(this.expiry - renewalWindow), \"too early\");\n    require(tx.intent.field(bytes(\"type\")) == bytes(\"register\"), \"not a registration\");\n    require(tx.intent.field(bytes(\"onchain_output_indexes\")) == bytes(\"[]\"), \"onchain output\");\n    int out = this.activeInputIndex - 1;\n    require(tx.outputs[out].value + maxFee >= tx.input.current.value, \"fee\");\n    require(this.tunnel(out, { script: true, value: false, assets: true }), \"tunnel\");\n  }\n\n  function migrate(signature adminSig) {\n    require(tx.numInputs == 1, \"single input\");\n    require(checkSig(adminSig, adminPk), \"admin\");\n    require(tx.outputs[0].value >= tx.input.current.value, \"value\");\n    require(tx.outputs[0].assets.lookup(oracleId) == 1, \"identity\");\n  }\n\n  function unilateral(signature adminSig) tapscript {\n    require(older(operatorExitDelay));\n    require(checkSig(adminSig, adminPk));\n  }\n}\n"
+    }
+  },
+  "compiler": {
+    "name": "arkadec",
+    "version": "0.1.0",
+    "options": {
+      "optimize": true
+    }
+  },
+  "fingerprint": "sha256:60bab1965451e26c2afd944b8e5ac15c23cf3c1122bd322decefeac1d78404fc"
+}

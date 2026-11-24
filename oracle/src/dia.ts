@@ -1,12 +1,7 @@
-// Signed BTC/USD prices. A market's contracts are built with one price check, a scheme of
-// contracts/oracles, and one key: an Oracle here is the client side of that pair. It names the
-// scheme, holds the key, and fetches or signs the prices the check accepts.
-//
-// To add a provider: write its check in contracts/oracles/<name>.json, regenerate the artifacts,
-// and implement Oracle with that name as its scheme.
+// DIA's signed BTC/USD prices: an EIP-712 `OracleUpdate` of DIA's registry on Lasernet, signed
+// with an Ethereum key. https://www.diadata.org/docs
 
-import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { concatBytes } from "@noble/hashes/utils.js";
 import { hex } from "@scure/base";
@@ -15,10 +10,12 @@ const DIA_RPC = "https://rpc.diadata.org/";
 const DIA_REGISTRY = "5612599cf48032d7428399d5fcb99edcc75c06a7";
 const DIA_CHAIN = 1050n;
 /**
- * DIA's price signer, 0x6f8b0911b1c77de54e113e326ed4bac69da5c51c, as the scripts take a key:
- * 0x10 marks an ECDSA key. `scripts/dia-signer.mjs` prints the one currently publishing.
+ * DIA's Lasernet price signer, 0x10e34723aA722C7A9860f5eC6446f22252dB168a, as a script takes a
+ * key: 0x10 marks an ECDSA key. DIA has a second signer publishing to the same registry,
+ * 0x6f8b0911b1c77de54e113e326ed4bac69da5c51c (`DIA_SECOND_KEY`); an oracle output trusts one.
  */
-export const DIA_KEY = "1002b79a8537202478fb5285c4b580d32160471c2671ad8cc0711f9dd8c88f962277";
+export const DIA_KEY = "100211ee120bca9f272034d98b1b026bb4ab735ebeb5da8be6a69bf7ee0ea24cfd48";
+export const DIA_SECOND_KEY = "1002b79a8537202478fb5285c4b580d32160471c2671ad8cc0711f9dd8c88f962277";
 export const DIA_EXPLORER = `https://explorer.diadata.org/address/0x${DIA_REGISTRY}`;
 
 // Lasernet makes a block every 0.3 seconds: this is about three minutes of updates.
@@ -27,40 +24,41 @@ const LOOKBACK_BLOCKS = 600n;
 const REUSE_MS = 20_000;
 const FIRST_RETRY_MS = 5_000;
 const MAX_RETRY_MS = 120_000;
-// The contracts open and close on a price at most 120 seconds old.
+// An update this old is no longer served: consumers usually want a price of the last minutes.
 const STALE_AFTER = 90;
 // The emulator refuses a price dated ahead of its clock.
 const CLOCK_MARGIN = 5;
 // DIA prices have 18 decimals, the contracts count in cents.
 const CENT = 10n ** 16n;
 
+/** A signed BTC/USD update, as DIA publishes it. */
 export interface PriceUpdate {
-  /** USD cents for one bitcoin, rounded half up as the contracts round it. */
+  /** USD cents for one bitcoin, rounded half up as the oracle output rounds it. */
   price: number;
   /** When the price was taken, unix seconds. */
   time: number;
-  /** What the scheme's price check takes, in the order of its inputs. */
-  witness: Uint8Array[];
+  /** The signed price, with 18 decimals. */
+  rawPrice: bigint;
+  nonce: bigint;
+  /** When the update stops being accepted, unix seconds. */
+  expiry: bigint;
+  /** The signer's 64-byte signature. */
+  signature: Uint8Array;
 }
 
-/** The price checks the contracts can be built with: the files of contracts/oracles. */
-export type OracleScheme = "dia" | "schnorr";
-
-export interface Oracle {
-  /** The price check the market's contracts run. */
-  readonly scheme: OracleScheme;
-  /** The key that check verifies prices against, as the contracts hold it. */
+/** Where signed prices come from, and the key that signs them. */
+export interface PriceFeed {
+  /** The signer's key as an oracle output holds it: 0x10 then the compressed key. */
   readonly key: Uint8Array;
-  /** The newest price, with the witness that makes the check accept it. */
   latest(): Promise<PriceUpdate>;
 }
 
 export class OracleError extends Error {}
 
-/** DIA has several signers taking turns; a market's contracts take the prices of one. */
+/** DIA has several signers taking turns; an oracle output takes the prices of one. */
 export class OtherSignerError extends OracleError {
   constructor() {
-    super("DIA has no recent price from the signer this market uses");
+    super("DIA has no recent price from the signer this oracle trusts");
   }
 }
 
@@ -110,21 +108,16 @@ function update(u: Signed, signature: Uint8Array): PriceUpdate {
   return {
     price: Number((u.raw + CENT / 2n) / CENT),
     time: Number(u.time),
-    witness: [scriptNum(u.raw), scriptNum(u.nonce), scriptNum(u.expiry), signature],
+    rawPrice: u.raw,
+    nonce: u.nonce,
+    expiry: u.expiry,
+    signature,
   };
-}
-
-/** A non-negative integer as the minimal number a script reads. */
-export function scriptNum(n: bigint): Uint8Array {
-  const out: number[] = [];
-  for (let v = n; v > 0n; v >>= 8n) out.push(Number(v & 0xffn));
-  if (out.length && out[out.length - 1] & 0x80) out.push(0);
-  return Uint8Array.from(out);
 }
 
 /**
  * Reads an update as DIA's registry returns it and checks it is signed by `key`, the key the
- * contracts trust, so a transaction is never built on an update they would refuse.
+ * oracle output trusts, so a transaction is never built on an update it would refuse.
  */
 export function decodeDia(result: string, key: string = DIA_KEY): PriceUpdate {
   let out: Uint8Array;
@@ -200,15 +193,13 @@ export async function trustedUpdate(rpc: Rpc, key: string = DIA_KEY): Promise<Pr
 /**
  * DIA's live BTC/USD price, read from its public RPC with no key and no account. However often it
  * is asked, it looks for a new update at most once per update DIA publishes, shares it between
- * callers, and backs off when DIA does not answer, serving the last update for as long as the
- * contracts take it.
+ * callers, and backs off when DIA does not answer, serving the last update while it is recent.
  *
- * `key` picks which of DIA's signers the market trusts; a market on another key is another
- * market, with other addresses.
+ * `key` picks which of DIA's signers to read: the one the oracle output trusts.
  */
 export function dia(
   { key = DIA_KEY, request = (...a) => fetch(...a) }: { key?: string; request?: typeof fetch } = {},
-): Oracle {
+): PriceFeed {
   let last: PriceUpdate | undefined;
   let fetchedAt = 0;
   let retryAt = 0;
@@ -242,7 +233,6 @@ export function dia(
   const usable = () => last !== undefined && seconds() - last.time < STALE_AFTER;
 
   return {
-    scheme: "dia",
     key: hex.decode(key),
     async latest() {
       const fresh = last !== undefined && Date.now() - fetchedAt < REUSE_MS;
@@ -264,12 +254,11 @@ export function dia(
 
 /**
  * A price signer of your own, for a local stack and for tests: it signs whatever price it is
- * given, in DIA's format, so it exercises the contracts the public networks run. A market built
- * on it is only as honest as whoever holds `secret`.
+ * given, in DIA's format, so it exercises the same oracle contract. An oracle output bound to it
+ * is only as honest as whoever holds `secret`.
  */
-export function localOracle(secret: Uint8Array, price: () => number): Oracle {
+export function localFeed(secret: Uint8Array, price: () => number): PriceFeed {
   return {
-    scheme: "dia",
     key: concatBytes(Uint8Array.of(0x10), secp256k1.getPublicKey(secret, true)),
     async latest() {
       const now = seconds();
@@ -281,28 +270,6 @@ export function localOracle(secret: Uint8Array, price: () => number): Oracle {
       };
       if (u.raw <= 0n) throw new OracleError("no price is set");
       return update(u, secp256k1.sign(digest(u), secret, { prehash: false }));
-    },
-  };
-}
-
-/**
- * A price signed with a plain Schnorr key over sha256(price | time): the smallest price check
- * there is, for whoever runs a signer of their own. `price` returns USD cents, from wherever the
- * signer gets them.
- */
-export function schnorrOracle(secret: Uint8Array, price: () => number | Promise<number>): Oracle {
-  return {
-    scheme: "schnorr",
-    key: schnorr.getPublicKey(secret),
-    async latest() {
-      const cents = Math.round(await price());
-      if (!(cents > 0)) throw new OracleError("no price is set");
-      const time = seconds() - CLOCK_MARGIN;
-      const note = new Uint8Array(16);
-      const view = new DataView(note.buffer);
-      view.setBigUint64(0, BigInt(cents), true);
-      view.setBigUint64(8, BigInt(time), true);
-      return { price: cents, time, witness: [schnorr.sign(sha256(note), secret)] };
     },
   };
 }

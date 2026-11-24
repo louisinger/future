@@ -2,7 +2,8 @@
 // offer goes live and a late deposit is refunded with no page open. The page works without it:
 // every transaction an executor would send, the page sends too.
 
-import { type Delegation, TEMPLATES } from "./engine.js";
+import { type Delegation, RENEW_TEMPLATE } from "@louisinger/dia-oracle";
+import { TEMPLATES } from "./engine.js";
 
 export class Executor {
   private constructor(
@@ -18,7 +19,7 @@ export class Executor {
   static async connect(
     url: string,
     keys: { server: string; emulator: string },
-    templates: string[] = Object.values(TEMPLATES),
+    templates: string[] = [...Object.values(TEMPLATES), RENEW_TEMPLATE],
   ): Promise<Executor | undefined> {
     try {
       const info = (await (await fetch(`${url}/v1/info`)).json()) as Record<string, string | undefined>;
@@ -40,12 +41,12 @@ export class Executor {
 
   /** Asks the executor to run a delegation's template. Resolves to whether it took it. */
   async delegate(d: Delegation): Promise<boolean> {
-    if (!this.templates.has(d.template)) return false;
+    if (!this.templates.has(d.templateId)) return false;
     try {
       const res = await fetch(`${this.url}/v1/delegation`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ templateId: d.template, variables: d.variables }),
+        body: JSON.stringify(d),
       });
       return res.ok;
     } catch {

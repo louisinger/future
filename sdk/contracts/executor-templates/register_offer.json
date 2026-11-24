@@ -2,7 +2,8 @@
   "format": "template/v1",
   "type": "virtual",
   "variables": {
-    "oracle_pk": "bytes",
+    "oracle_txid": "bytes32",
+    "oracle_gidx": "int",
     "renewal_window": "int",
     "max_fee": "int",
     "position_program": "bytes32",
@@ -50,13 +51,16 @@
       "locking": {
         "contract": {
           "definition": {
-            "artifact": "549c0bb0511cea800929d90bb81ef0c991783ac9abfce638d2cd40ab756ac106"
+            "artifact": "d8926ab3855e71e66821afd7c66dba3711d66a82d452c26f2ae1f03cd36fa36d"
           },
           "arguments": {
-            "oraclePk": "<oracle_pk>",
+            "oracleTxid": "<oracle_txid>",
+            "oracleGidx": "<oracle_gidx>",
             "positionProgram": "<position_program>",
             "renewalWindow": "<renewal_window>",
-            "maxFee": "<max_fee>"
+            "maxFee": "<max_fee>",
+            "exitKey": "0250929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0",
+            "exitDelay": "<exit_delay>"
           }
         }
       }

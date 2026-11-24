@@ -19,56 +19,40 @@ npm install ./louisinger-future-sdk-0.1.0.tgz
 ## Read the market
 
 ```ts
-import { Engine, NETWORKS, dia } from "@louisinger/future-sdk";
+import { Engine, NETWORKS } from "@louisinger/future-sdk";
 
-const market = await Engine.connect({ ...NETWORKS.mainnet, oracle: dia() });
+const market = await Engine.connect({ ...NETWORKS.mainnet, oracle });
 const [offers, positions, price] = await Promise.all([
   market.offers(),
   market.positions(),
-  market.oracle.latest(),
+  market.latest(),
 ]);
 ```
 
 `NETWORKS` has `mainnet`, `mutinynet` and `regtest`. Amounts are sats, prices USD cents, times
 unix seconds.
 
-## Choose the oracle
+## The oracle
 
-The oracle you connect with decides which market you are in. A market's contracts are built
-with one price check and one key, both part of every address, so two oracles never share
-offers or positions, and an open market cannot change oracle.
+The market's contracts read prices from an oracle output:
+[`@louisinger/dia-oracle`](../oracle/README.md), which checks DIA's signature. `oracle` is the
+parameters its operator publishes, `{ assetId, oraclePk, adminPk }`; `NETWORKS.<name>.oracle`
+holds them once one is deployed on that network.
 
-| | Price check | Key | Prices come from |
-|---|---|---|---|
-| `dia()` | `dia` | DIA's signer | DIA's public RPC |
-| `dia({ key })` | `dia` | another DIA signer | the same, that signer's updates only |
-| `schnorrOracle(secret, price)` | `schnorr` | your x-only key | your function |
-| `localOracle(secret, price)` | `dia` | a test key | your function, in DIA's format |
+The oracle's identity asset is part of every address of the market, so another oracle is
+another market. DIA's key is not: the oracle's admin can rotate it without touching an open
+trade. Every transaction that needs a price spends one of the oracle's outputs with it; the SDK
+picks one, and moves to another when someone else just took it.
 
-`dia()` is the market of the app on mainnet and Mutinynet. `localOracle` is for a local stack
-and for tests: it exercises the contracts the public networks run. `schnorrOracle` is for
-whoever signs prices themselves; only the holder of the secret can produce a price, so to let
-others trade and settle, publish what `latest()` returns and have them implement `Oracle` over
-it.
+For a local stack, deploy an oracle bound to a key of your own and pass its feed:
 
 ```ts
-import { schnorrOracle } from "@louisinger/future-sdk";
+import { connect, deploy, localFeed } from "@louisinger/dia-oracle";
 
-const oracle = schnorrOracle(secret, async () => fetchCents());
-const market = await Engine.connect({ ...NETWORKS.mutinynet, oracle });
+const feed = localFeed(secret, () => cents);
+const oracle = await deploy(wallet, await connect({ arkUrl, emulatorUrl }), feed, { adminPk });
+const market = await Engine.connect({ arkUrl, emulatorUrl, oracle, feed });
 ```
-
-An `Oracle` is three things: the `scheme` its contracts run, the `key` they hold, and
-`latest()`, the newest price with the witness that scheme takes. To add a provider:
-
-1. Write its check in `contracts/oracles/<name>.json`: the witness inputs it takes and the
-   script that verifies the price note against `<oraclePk>`. It starts with its inputs on the
-   stack, the first on top, and must consume them and leave nothing.
-2. `UPDATE_VECTORS=1 go test ./...` in `contracts/` writes `contracts/artifacts/<name>/`.
-3. Add the name to `OracleScheme` and its artifacts to `ARTIFACTS` in `src/engine.ts`, and
-   implement `Oracle` for it.
-
-The executor templates are built on the `dia` contracts; a market on another check has none.
 
 ## Offer liquidity
 
@@ -98,7 +82,7 @@ await market.withdraw(mine, provider.key);
 
 ```ts
 const trader = newAccount();
-const { price } = await market.oracle.latest();
+const { price } = await market.latest();
 const terms = {
   traderPk: trader.pub,
   traderProgram: market.program("ark1…"),
@@ -130,7 +114,7 @@ can: none of these needs a key.
 ```ts
 import { resolvable } from "@louisinger/future-sdk";
 
-const quote = await market.oracle.latest();
+const quote = await market.latest();
 for (const p of await market.positions()) {
   // past its end, or one side out of margin
   if (resolvable(p, quote.price, quote.time)) await market.resolve(p);
@@ -159,7 +143,8 @@ Pass `settlements((outpoint) => seen.has(outpoint))` to skip the ones already re
 
 An [executor](https://github.com/arkade-os/executor) that has the market's templates acts with
 no client running: it publishes an offer when its deposit is paid, refunds a trade deposit that
-missed its deadline, and renews offers and positions before their coins expire. It cannot open
+missed its deadline, and renews offers, positions and the oracle's outputs before their coins
+expire. It cannot open
 or settle a trade, which need a price, nor cancel or withdraw, which need the owner's signature.
 
 ```ts
@@ -174,33 +159,27 @@ for (const renewal of market.renewalDelegations()) {              // once per ma
 ```
 
 `delegate` resolves to false when the executor does not have the template; registering the same
-delegation twice changes nothing. `scripts/register-templates.sh <admin url> [renew]` registers
-the templates on an executor. Renewal needs an operator on arkd v0.9.27 or later: see the
-repository's README.
+delegation twice changes nothing. `scripts/register-templates.sh <admin url> renew` registers
+the templates on an executor.
 
 ## What is in the package
 
 ```
 src/engine.ts       Engine: addresses, market state, every transaction
 src/payoff.ts       the market's arithmetic, offer matching, state validation
-src/oracle.ts       Oracle, dia(), schnorrOracle(), localOracle()
 src/executor.ts     Executor: delegations
 src/networks.ts     NETWORKS
-contracts/src/      the four contracts, hand-written Arkade Script, with "$oracle" where a
-                    price is checked
-contracts/oracles/  the price checks that go there: dia, schnorr
-contracts/artifacts/<oracle>/   the contracts built with each check, generated and pinned
+contracts/artifacts/   the four contracts, hand-written Arkade Script
 contracts/          their Go tests, the executor templates
 ```
 
-The artifacts, price checks and executor templates are also exported as files:
-`@louisinger/future-sdk/artifacts/dia/position.json`, `…/oracles/dia.json`,
-`…/templates/register_offer.json`.
+The artifacts and executor templates are also exported as files:
+`@louisinger/future-sdk/artifacts/position.json`, `…/templates/register_offer.json`.
 
 ## Test
 
 ```sh
-pnpm test                          # arithmetic, the price client, script parity with the Go tests
+pnpm test                          # arithmetic, script parity with the Go tests
 pnpm test:e2e                      # a full market on a local regtest stack
 (cd contracts && go test ./...)    # every contract function, accepted and refused
 ```

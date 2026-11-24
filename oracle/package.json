@@ -1,0 +1,46 @@
+{
+  "name": "@louisinger/dia-oracle",
+  "version": "0.1.0",
+  "description": "DIA's BTC/USD price as an oracle output within Arkade: the contract, and a client to deploy it, find it and read a price in a transaction",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/louisinger/future.git",
+    "directory": "oracle"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./artifacts/*": "./artifacts/*",
+    "./contracts/*": "./contracts/*"
+  },
+  "files": [
+    "dist",
+    "artifacts",
+    "contracts"
+  ],
+  "scripts": {
+    "build:contracts": "node scripts/build.mjs",
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "test": "vitest run test/unit",
+    "test:e2e": "vitest run test/e2e",
+    "typecheck": "tsc --noEmit",
+    "prepack": "pnpm build"
+  },
+  "dependencies": {
+    "@arkade-os/sdk": "0.5.13",
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
+    "@scure/base": "^2.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1",
+    "@arkade-os/compiler": "0.1.0"
+  }
+}

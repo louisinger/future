@@ -26,6 +26,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
       - run: pnpm typecheck
+      - run: pnpm -C oracle build
       - run: pnpm -C sdk build
       - run: pnpm build
       - uses: actions/upload-pages-artifact@v3

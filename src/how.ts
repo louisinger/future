@@ -99,20 +99,22 @@ const TXS: Tx[] = [
     action: "Open",
     inputs: [
       { kind: "contract", name: "Trade deposit", sub: "TradeDeposit.fill" },
+      { kind: "contract", name: "Price oracle", sub: "checks DIA's signature" },
       { kind: "contract", name: "Offer", sub: "Offer.fill" },
     ],
     outputs: [
+      { kind: "contract", name: "Price oracle", sub: "put straight back" },
       { kind: "contract", name: "Position", sub: "margin + maximum profit" },
       { kind: "contract", name: "Offer", sub: "what is left, same note" },
     ],
-    who: "Anyone, with a price signed in the last two minutes",
-    signed: "Nobody. The price signer's signature rides along.",
+    who: "Anyone, with a DIA price signed in the last two minutes",
+    signed: "Nobody. DIA's signed price rides along, and the price oracle checks it.",
     notes: "Price (34), offer note (64) carried, position note (65) written",
     rules: [
       {
         by: "TradeDeposit.fill protects the trader",
         checks: [
-          "The price is signed, and the position starts at that moment",
+          "The price comes from the price oracle, and the position starts at that moment",
           "Entry is within the trader's limit and within their spread cap of the signed price",
           "The note names the trader's key and payout address, their direction and leverage",
           "Margin is exactly what the deposit holds; size is margin × leverage",
@@ -126,14 +128,14 @@ const TXS: Tx[] = [
       {
         by: "Offer.fill protects the provider",
         checks: [
-          "The price is signed and fresh, and the position starts at that moment",
+          "The price comes from the price oracle and is fresh, and the position starts at that moment",
           "Entry is no better than the signed price moved by the offer's spread",
           "Leverage and duration respect the offer's limits",
           "The holding fee in the note is the offer's",
           "Both margins are at least 5,000 sats; the trade lasts at least a minute",
           "The position pays the provider's address and holds both margins",
           "Only the provider's margin leaves; the rest returns to the same offer address with the same note",
-          "Exactly two coins are spent, so one offer cannot fund two trades at once",
+          "Exactly three coins are spent, the deposit, the oracle and the offer, so one offer cannot fund two trades at once",
         ],
       },
     ],
@@ -143,24 +145,28 @@ const TXS: Tx[] = [
     title: "5. The position settles",
     what: "At its end date the pot is split by the formula below. Before that, anyone can settle it the moment one side's margin is used up: that is a liquidation when it is the trader's, and the take-profit when it is the provider's.",
     action: "Settle",
-    inputs: [{ kind: "contract", name: "Position", sub: "Position.resolve" }],
+    inputs: [
+      { kind: "contract", name: "Position", sub: "Position.resolve" },
+      { kind: "contract", name: "Price oracle", sub: "checks DIA's signature" },
+    ],
     outputs: [
+      { kind: "contract", name: "Price oracle", sub: "put straight back" },
       { kind: "payout", name: "Trader's address", sub: "the pot minus the provider's share" },
       { kind: "payout", name: "Provider's address", sub: "the provider's share" },
     ],
     who: "Anyone, with a signed price",
-    signed: "Nobody. The price signer's signature rides along.",
+    signed: "Nobody. DIA's signed price rides along, and the price oracle checks it.",
     notes: "Price (34)",
     rules: [
       {
         by: "Position.resolve",
         checks: [
-          "The price is signed, at a time after the position started",
+          "The price comes from the price oracle, at a time after the position started",
           "Either that time is past the end date, or one side is down to 1% of the trader's margin",
           "The provider gets what the formula gives, the trader the rest",
           "Both are paid to the addresses in the position's note",
           "A share of 330 sats or less is folded into the other, leaving a single payout",
-          "It is the only coin spent",
+          "Only the position and the price oracle are spent",
         ],
       },
     ],
@@ -170,8 +176,12 @@ const TXS: Tx[] = [
     title: "6. The trader closes early",
     what: "The same split, at any moment the trader chooses. Only the trader's key allows it, and only at a price signed in the last two minutes.",
     action: "Close",
-    inputs: [{ kind: "contract", name: "Position", sub: "Position.close" }],
+    inputs: [
+      { kind: "contract", name: "Position", sub: "Position.close" },
+      { kind: "contract", name: "Price oracle", sub: "checks DIA's signature" },
+    ],
     outputs: [
+      { kind: "contract", name: "Price oracle", sub: "put straight back" },
       { kind: "payout", name: "Trader's address", sub: "the pot minus the provider's share" },
       { kind: "payout", name: "Provider's address", sub: "the provider's share" },
     ],
@@ -183,9 +193,9 @@ const TXS: Tx[] = [
         by: "Position.close",
         checks: [
           "The trader's key signed for this exact coin",
-          "The price is signed, after the start and less than two minutes ago",
+          "The price comes from the price oracle, after the start and less than two minutes ago",
           "Same formula, same addresses and same folding as a settlement",
-          "It is the only coin spent",
+          "Only the position and the price oracle are spent",
         ],
       },
     ],
@@ -357,7 +367,7 @@ const CONTRACTS: { name: string; what: string; terms: string; fns: [string, stri
   {
     name: "Offer",
     what: "A provider's liquidity. Every offer lives at this one address.",
-    terms: "In the address: the price signer's key and the position address. In its note: the provider's terms.",
+    terms: "In the address: the price oracle's token and the position address. In its note: the provider's terms.",
     fns: [
       ["fill", "anyone, with a signed price", "open"],
       ["withdraw", "provider's key", "withdraw"],
@@ -367,7 +377,7 @@ const CONTRACTS: { name: string; what: string; terms: string; fns: [string, stri
   {
     name: "Position",
     what: "One trade: both margins in one coin. Every position lives at this one address.",
-    terms: "In the address: the price signer's key. In its note: everything about the trade.",
+    terms: "In the address: the price oracle's token. In its note: everything about the trade.",
     fns: [
       ["resolve", "anyone, with a signed price", "settle"],
       ["close", "trader's key", "close"],

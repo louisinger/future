@@ -1,22 +1,25 @@
 {
   "contractName": "FutureOffer",
   "constructorInputs": [
-    {"name": "oraclePk", "type": "bytes"},
+    {"name": "oracleTxid", "type": "bytes32"},
+    {"name": "oracleGidx", "type": "int"},
     {"name": "positionProgram", "type": "bytes32"},
     {"name": "renewalWindow", "type": "int"},
-    {"name": "maxFee", "type": "int"}
+    {"name": "maxFee", "type": "int"},
+    {"name": "exitKey", "type": "pubkey"},
+    {"name": "exitDelay", "type": "int"}
   ],
   "structs": [],
   "functions": [
     {
       "name": "fill",
       "arkade": {
-        "inputs": [{"name": "$oracle", "type": "oracle"}],
+        "inputs": [],
         "asm": [
-          "OP_PUSHCURRENTINPUTINDEX", "1", "OP_NUMEQUALVERIFY",
-          "OP_INSPECTNUMINPUTS", "2", "OP_NUMEQUALVERIFY",
+          "OP_PUSHCURRENTINPUTINDEX", "2", "OP_NUMEQUALVERIFY",
+          "OP_INSPECTNUMINPUTS", "3", "OP_NUMEQUALVERIFY",
           "34", "OP_INSPECTPACKET", "OP_VERIFY", "OP_SIZE", "17", "OP_NUMEQUALVERIFY", "0", "1", "OP_SUBSTR", "0x01", "OP_EQUALVERIFY",
-          "$oracle",
+          "1", "<oracleTxid>", "<oracleGidx>", "OP_INSPECTINASSETLOOKUP", "OP_VERIFY", "1", "OP_NUMEQUALVERIFY",
           "34", "OP_INSPECTPACKET", "OP_VERIFY", "9", "8", "OP_SUBSTR", "OP_BIN2NUM", "OP_CHECKTIME", "OP_VERIFY",
           "64", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTPACKET", "OP_VERIFY", "OP_SIZE", "97", "OP_NUMEQUALVERIFY", "0", "1", "OP_SUBSTR", "0x01", "OP_EQUALVERIFY",
           "65", "OP_INSPECTPACKET", "OP_VERIFY", "OP_SIZE", "161", "OP_NUMEQUALVERIFY", "0", "1", "OP_SUBSTR", "0x01", "OP_EQUALVERIFY",
@@ -74,15 +77,15 @@
           "65", "OP_INSPECTPACKET", "OP_VERIFY", "17", "8", "OP_SUBSTR", "OP_BIN2NUM", "OP_1ADD",
           "OP_WITHIN", "OP_VERIFY",
 
-          "0", "OP_INSPECTOUTPUTSCRIPTPUBKEY", "1", "OP_NUMEQUALVERIFY", "<positionProgram>", "OP_EQUALVERIFY",
-          "0", "OP_INSPECTOUTPUTVALUE",
+          "1", "OP_INSPECTOUTPUTSCRIPTPUBKEY", "1", "OP_NUMEQUALVERIFY", "<positionProgram>", "OP_EQUALVERIFY",
+          "1", "OP_INSPECTOUTPUTVALUE",
           "65", "OP_INSPECTPACKET", "OP_VERIFY", "25", "8", "OP_SUBSTR", "OP_BIN2NUM",
           "65", "OP_INSPECTPACKET", "OP_VERIFY", "33", "8", "OP_SUBSTR", "OP_BIN2NUM",
           "OP_ADD", "OP_GREATERTHANOREQUAL", "OP_VERIFY",
 
-          "1", "OP_INSPECTOUTPUTSCRIPTPUBKEY", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTSCRIPTPUBKEY",
+          "2", "OP_INSPECTOUTPUTSCRIPTPUBKEY", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTSCRIPTPUBKEY",
           "OP_ROT", "OP_NUMEQUALVERIFY", "OP_EQUALVERIFY",
-          "1", "OP_INSPECTOUTPUTVALUE", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTVALUE",
+          "2", "OP_INSPECTOUTPUTVALUE", "OP_PUSHCURRENTINPUTINDEX", "OP_INSPECTINPUTVALUE",
           "65", "OP_INSPECTPACKET", "OP_VERIFY", "33", "8", "OP_SUBSTR", "OP_BIN2NUM",
           "OP_SUB", "OP_GREATERTHANOREQUAL", "OP_VERIFY",
 
@@ -152,6 +155,16 @@
             {"name": "serverSig", "type": "signature", "encoding": "schnorr-64", "injected": true},
             {"name": "emulatorSig", "type": "signature", "encoding": "schnorr-64", "injected": true}
           ]
+        }
+      ]
+    },
+    {
+      "name": "exit",
+      "leaves": [
+        {
+          "name": "exit",
+          "asm": ["<exitDelay>", "OP_CHECKSEQUENCEVERIFY", "OP_DROP", "<exitKey>", "OP_CHECKSIG"],
+          "witness": [{"name": "exitSig", "type": "signature", "encoding": "schnorr-64"}]
         }
       ]
     }

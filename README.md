@@ -32,33 +32,46 @@ price and what you received, whoever settled them and whether or not the page wa
 
 The header switches network; `?net=` in the address does the same.
 
-| | Operator | Emulator | Executor | Price |
+| | Operator | Emulator | Executor | Oracle |
 |---|---|---|---|---|
-| `mainnet` (default) | `arkade.computer` | `emulator.arkade.computer` | `executor.arkade.sh` | DIA |
-| `mutinynet` | `mutinynet.arkade.sh` | `emulator.mutinynet.arkade.sh` | `executor.mutinynet.arkade.sh` | DIA |
-| `regtest` | `localhost:7070` | `localhost:7073` | `localhost:7080` | a test key, you set the price |
+| `mainnet` (default) | `arkade.computer` | `emulator.arkade.computer` | `executor.arkade.sh` | deployed, below |
+| `mutinynet` | `mutinynet.arkade.sh` | `emulator.mutinynet.arkade.sh` | `executor.mutinynet.arkade.sh` | deployed, below |
+| `regtest` | `localhost:7070` | `localhost:7073` | `localhost:7080` | one you deploy, on a test key |
 
 Each network is a separate market with its own key and addresses in the browser.
 
+The oracles the market reads, each of three coins that the network's executor renews:
+
+| | Oracle address | Identity asset |
+|---|---|---|
+| `mainnet` | `ark1qzpq904am6clw3pgqwyh4p02708fy4xs0hcpwt7rwfdttuxsjamee94p76chjnhgaarg42rsr2h90shqr90y8dj53r9fed68npzn8zjmahlwa6` | `75bdeeaff59a25d46e4034a1aa245f8294514b2475403f330030843b775971260000` |
+| `mutinynet` | `tark1qqcpq7yq3e8hhsx6ml3fud93m7827qggaurtzu3zwsr4a0qs0gf850g9aeygjfjg953gpkfcjezkha2s0fjw94pptpxrjnr9lt9d48gvxwtcz4` | `30195f37f8c1697ac90d922cd44b60108cfc2d2781ecc71254742ec95fb7a7380000` |
+
+Both trust DIA's signer `0x10e34723aA722C7A9860f5eC6446f22252dB168a`. Their full parameters,
+for other apps, are in [`oracle/README.md`](oracle/README.md#deployed-oracles).
+
 ### The price
 
-The price check is a module of the contracts and the oracle a parameter of the SDK: see
-[Choose the oracle](sdk/README.md#choose-the-oracle). The app uses DIA on mainnet and
-Mutinynet, chosen in one line of `src/main.ts`.
+Prices are BTC/USD updates signed by [DIA](https://www.diadata.org/docs). The market does not
+check DIA's signature itself: it reads the price from an oracle output within Arkade, a
+separate contract in [`oracle/`](oracle/README.md) that any app can use. A transaction that
+needs a price spends one of the oracle's coins along with its own; the oracle checks the
+signature and is put straight back.
 
-`sdk/src/oracle.ts` reads DIA's latest signed BTC/USD update from its public RPC,
-`https://rpc.diadata.org`, with no account and no key. Each browser asks for itself, at most
-once per 20 seconds however many trades are open (DIA publishes about every 25) with one to
-four small requests, shares the
-answer between everything on the page, and backs off up to two minutes when refused while it
-serves the last update the contracts still accept.
+The market recognises the oracle by its identity asset, so DIA's key can change without
+touching an open trade. The oracle has several interchangeable coins, so that people trading at
+the same moment do not wait on each other, and an executor renews them.
 
-DIA has two signers taking turns, about ten seconds apart, and the contracts pin one key,
-`0x6f8b…c51c`. The registry's "latest" is whoever published last, so when that is the other
-signer the page finds the pinned signer's newest update in the registry's events and reads it by
-its hash: every price it uses is that signer's, and under half a minute old. `node
-sdk/scripts/dia-signer.mjs` prints who signed the latest update. A market on another key is a new
-set of addresses.
+A network trades once an oracle is deployed on it and its parameters are in
+`sdk/src/oracles.json` ([docs/DEPLOY.md](docs/DEPLOY.md) has every command):
+
+```sh
+pnpm -C oracle build
+node oracle/scripts/deploy.mjs --ark <operator> --emulator <emulator> --admin <x-only key>
+```
+
+On regtest, add `--signer test:arkade-futures-demo-oracle --explorer http://localhost:3000
+--out public/oracle.regtest.json`: the page reads that file and signs the prices you set.
 
 ### The executor
 
@@ -70,35 +83,39 @@ need none:
 |---|---|---|
 | Publish an offer when its deposit is paid | `register_offer` | works, tested on regtest |
 | Refund a trade deposit that missed its deadline | `refund_trade` | works, tested on regtest |
-| Renew an offer before its coin expires | `renew_offer` | needs arkd v0.9.27, see below |
-| Renew a position before its coin expires | `renew_position` | needs arkd v0.9.27, see below |
+| Renew an offer before its coin expires | `renew_offer` | works, tested on regtest |
+| Renew a position before its coin expires | `renew_position` | works, tested on regtest |
+| Renew the oracle's coins before they expire | `renew_oracle`, in `oracle/` | works, tested on regtest |
 
 Opening, closing, settling and liquidating need a price: a page does those. Cancelling and
 withdrawing need the owner's signature at the time: a page does those too.
 
 When the network's executor has a template, the page uses it: it hands the executor each
-address it creates, and registers the market's two renewal delegations, which cover every offer
-and every position. Without the templates the page does the first two steps itself while it is
+address it creates, and registers the market's renewal delegations, which cover every offer,
+every position and the oracle's coins. Without the templates the page does the first two steps itself while it is
 open, and nothing renews.
 
-Templates are registered on an executor's admin port, by its operator:
+Templates are registered on an executor's admin port, or on its public port when it runs with
+`EXECUTOR_PUBLIC_REGISTRY=true`:
 
 ```sh
-sdk/scripts/register-templates.sh http://localhost:7081          # publish and refund
-sdk/scripts/register-templates.sh http://localhost:7081 renew    # and the two renewals
+sdk/scripts/register-templates.sh http://localhost:7081 renew    # publish, refund, renewals
 ```
 
-**Renewal does not work on arkd v0.9.26 and earlier**, which mainnet runs today. Offers and
-positions have no unilateral exit leaf, and those versions refuse such a coin in a batch
-(`INVALID_VTXO_SCRIPT: no exit leaf`); the executor's attempt on regtest (arkd v0.9.13) got
-exactly that answer. arkd v0.9.27 accepts them. Register the renewal templates only once the
-operator runs it: ten refusals in a row disable a template. Renewal has not been seen working
-end to end.
+The oracle's own renewal needs no separate step: deploying it with `--executor` gives the
+executor its contract and template and registers the renewal.
+
+Renewing means joining a batch, and arkd up to v0.9.26 only takes a coin into a batch if its
+script has an exit leaf. Offers and positions are shared addresses and cannot name an owner's
+key, so their exit leaf names the key of BIP 341 that nobody can sign for: it satisfies arkd and
+gives nobody a way out. The executor renewed an offer, a position and an oracle coin in one
+batch on regtest, on arkd v0.9.13.
 
 ## Layout
 
-The repository is the app and, in `sdk/`, the client it is built on:
-[`@louisinger/future-sdk`](sdk/README.md), usable on its own from a browser or Node.
+The repository is the app and two packages usable on their own from a browser or Node:
+[`@louisinger/future-sdk`](sdk/README.md), the market's client, and
+[`@louisinger/dia-oracle`](oracle/README.md), the price oracle any Arkade app can read.
 
 ```
 index.html, how.html     the two pages
@@ -106,20 +123,19 @@ src/main.ts              the trading page
 src/how.ts               the reference page
 src/explain.ts           failures as sentences
 src/qr.ts                QR codes for deposit addresses
-sdk/src/                 the client: addresses, market state, every transaction, prices, executor
-sdk/contracts/src/       the four contracts, hand-written Arkade Script
-sdk/contracts/oracles/   the price checks they can be built with: dia, schnorr
-sdk/contracts/artifacts/ the contracts built with each price check, generated
+oracle/                  the price oracle: its contract, DIA client, deploy and renewal
+sdk/src/                 the client: addresses, market state, every transaction, executor
+sdk/contracts/artifacts/ the four contracts, hand-written Arkade Script
 sdk/contracts/           their tests, a Go module that runs each script in the emulator's engine
 sdk/contracts/executor-templates/   templates executord can run by itself: register, refund, renew
-sdk/scripts/             register the templates on an executor, print DIA's current signer
+sdk/scripts/             register the templates on an executor
 docs/DESIGN.md           how it works and what it does not protect against
 ```
 
 ## Test
 
 ```sh
-pnpm test                      # arithmetic, the price client, script parity with the Go tests
+pnpm test                      # the oracle package, arithmetic, script parity with the Go tests
 pnpm test:e2e                  # full market on a local regtest stack
 (cd sdk/contracts && go test ./...)   # every contract function, accepted and refused
 ```
@@ -129,8 +145,7 @@ pnpm test:e2e                  # full market on a local regtest stack
   contract's output script; `sdk/test/unit/vectors.test.ts` checks the SDK derives the same bytes,
   so the scripts the Go tests execute are the ones the page deploys. Rewrite it, and the
   template ids in `templates.json`, with `UPDATE_VECTORS=1 go test ./...` after changing a
-  contract or a price check, which also regenerates `artifacts/`; a template names its
-  contracts by id, printed by the failing test.
+  contract; a template names its contracts by id, printed by the failing test.
 - `pnpm test:e2e` expects arkd and the emulator on localhost and a container named `arkd`
   whose CLI wallet it uses as a faucet. executor's `make regtest-up` provides all three. One
   Two scenarios read DIA's live prices, so they need the internet. The executor scenario runs when
@@ -138,12 +153,12 @@ pnpm test:e2e                  # full market on a local regtest stack
 
 ## Known limits
 
-- DIA's key decides every price. A position that reached its end can be settled on any DIA
+- DIA's key decides every price, and the oracle's admin key can replace the oracle's rules. A position that reached its end can be settled on any DIA
   price of the following hour, so whoever settles picks among them.
 - Offers and positions have no exit if the operator disappears. Deposits do.
-- Coins expire, and until the operator runs arkd v0.9.27 nothing can renew an offer or a
-  position: withdraw an offer and settle a position before their coins expire. The other side's
-  coin can also shorten yours.
+- Coins expire. An executor that has the templates renews offers, positions and the oracle's
+  coins; without one, withdraw an offer and settle a position before their coins expire. The
+  other side's coin can also shorten yours.
 - A trade opens or settles when someone's page is open, yours or anyone's: an executor cannot
   fetch a price.
 - Nothing has been traded on mainnet. The mainnet emulator runs an older version than the one

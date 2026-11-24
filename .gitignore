@@ -1,2 +1,4 @@
 node_modules
 dist
+public/oracle.regtest.json
+oracle.*.json

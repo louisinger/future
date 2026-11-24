@@ -1,0 +1,66 @@
+{
+  "format": "template/v1",
+  "type": "proof",
+  "variables": {
+    "oracle_txid": "bytes32",
+    "oracle_gidx": "int",
+    "oracle_pk": "bytes",
+    "admin_pk": "pubkey",
+    "renewal_window": "int",
+    "max_fee": "int",
+    "exit_delay": "int"
+  },
+  "inputs": [
+    {
+      "name": "oracle",
+      "contract": {
+        "definition": {
+          "artifact": "b0730d5de0574dcc1a61fffe750a97d5e26cb7a94b9531e31cf9dfb992253ae0"
+        },
+        "arguments": {
+          "oracleId.txid": "<oracle_txid>",
+          "oracleId.gidx": "<oracle_gidx>",
+          "oraclePk": "<oracle_pk>",
+          "adminPk": "<admin_pk>",
+          "renewalWindow": "<renewal_window>",
+          "maxFee": "<max_fee>",
+          "operatorExitDelay": "<exit_delay>"
+        }
+      },
+      "spend": {
+        "function": "renew",
+        "leaf": "renew"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "renewed",
+      "value": {
+        "from": "oracle"
+      },
+      "locking": {
+        "from": "oracle"
+      },
+      "assets": [
+        {
+          "from": "oracle"
+        }
+      ]
+    }
+  ],
+  "fees": {
+    "from": "oracle",
+    "max": "<max_fee>"
+  },
+  "packets": {
+    "unmatched": "drop"
+  },
+  "delegation": {
+    "schedule": {
+      "oracle": {
+        "before_expiry_seconds": "<renewal_window>"
+      }
+    }
+  }
+}
