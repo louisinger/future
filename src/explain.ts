@@ -1,4 +1,5 @@
-import { NoCoinError, OracleError } from "@louisinger/future-sdk";
+import { NoOracleOutputError, OracleError } from "@louisinger/dia-oracle";
+import { NoCoinError } from "@louisinger/future-sdk";
 
 /** Turns the failure of an action into a sentence for the person who asked for it. */
 export function explain(action: string, err: unknown): string {
@@ -15,6 +16,7 @@ export function explain(action: string, err: unknown): string {
     if (action === "close") return "The close was refused. Refresh the price and try again.";
     return "The contract refused this transaction.";
   }
+  if (err instanceof NoOracleOutputError) return "The price oracle is busy or not live. Trying again shortly.";
   if (err instanceof OracleError) return `No signed price right now: ${message}. Trying again shortly.`;
   if (has("Failed to fetch", "fetch failed", "ECONNREFUSED", "NetworkError")) {
     return "Cannot reach the Arkade operator. Check your connection.";

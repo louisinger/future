@@ -15,7 +15,7 @@ post() {
     curl -sS --fail-with-body -X POST -H 'content-type: application/json' --data-binary @- "$url/v1/$1" >/dev/null
   echo "registered $2"
 }
-for f in artifacts/dia/*.json; do post artifact "$f"; done
+for f in artifacts/*.json; do post artifact "$f"; done
 for f in executor-templates/register_offer.json executor-templates/refund_trade.json; do
   post template "$f"
 done

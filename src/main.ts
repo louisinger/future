@@ -1,7 +1,6 @@
 import "./style.css";
 import {
   type Account,
-  DIA_EXPLORER,
   type Deposit,
   type Ending,
   Engine,
@@ -12,19 +11,17 @@ import {
   type Offer,
   type OfferTerms,
   type Position,
-  type PriceUpdate,
   type Quote,
   TEMPLATES,
   type TradeTerms,
   accountFrom,
-  dia,
   fee,
   levels,
-  localOracle,
   newAccount,
   payouts,
   resolvable,
 } from "@louisinger/future-sdk";
+import { DIA_EXPLORER, type OracleParams, type PriceUpdate, localFeed } from "@louisinger/dia-oracle";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { explain } from "./explain";
 import { qrSvg } from "./qr";
@@ -212,7 +209,7 @@ function renderLog(): void {
 const price = () => latest?.price ?? 0;
 async function refreshPrice(): Promise<void> {
   try {
-    latest = await engine.oracle.latest();
+    latest = await engine.latest();
     priceLate = false;
   } catch (e) {
     if (!priceLate) say(explain("price", e), "bad");
@@ -523,7 +520,7 @@ async function recordSettlements(): Promise<void> {
     };
     closed.unshift(entry);
     if (announce && !settledHere.has(id)) {
-      say(`${closedTitle(entry)} ${ENDINGS[entry.ending]} at ${usd(entry.price)}: ${fmtSats(received)} paid to you (${signed(entry.result)}).`, entry.result >= 0 ? "good" : "bad");
+      say(`${closedTitle(entry)} ${endingOf(entry)} at ${usd(entry.price)}: ${fmtSats(received)} paid to you (${signed(entry.result)}).`, entry.result >= 0 ? "good" : "bad");
     }
   }
   if (fresh.length || !announce) {
@@ -549,6 +546,7 @@ function announceOpened(): void {
     store.set("openedRead", true);
   }
 }
+const endingOf = (c: Closed) => (c.mine && c.ending === "closed" ? "was closed by you" : ENDINGS[c.ending]);
 const closedTitle = (c: Closed) =>
   `${c.mine ? "Your" : "A"} ${c.side ? "short" : "long"} ${c.leverage}×${c.mine ? "" : " against your offer"}`;
 
@@ -799,7 +797,7 @@ function render(): void {
           ),
           el("div", { className: `pnl num ${c.result >= 0 ? "long" : "short"}`, textContent: signed(c.result) }),
         ),
-        el("p", { className: "hint", textContent: `${closedTitle(c)} ${ENDINGS[c.ending]} ${ago(c.time)}. ${fmtSats(c.received)} paid to you.` }),
+        el("p", { className: "hint", textContent: `${closedTitle(c)} ${endingOf(c)} ${ago(c.time)}. ${fmtSats(c.received)} paid to you.` }),
       ),
     ),
   );
@@ -847,20 +845,19 @@ const guarded = (action: string, fn: () => void) => () => {
   }
 };
 
-async function boot(): Promise<void> {
-  const oracle = net === "regtest" ? localOracle(sha256(new TextEncoder().encode(TEST_ORACLE_SEED)), () => testPrice) : dia();
-  engine = await Engine.connect({ ...NETWORKS[net], oracle });
-  void Executor.connect(NETWORKS[net].executorUrl, engine.keys).then((e) => {
-    executor = e;
-    // the market's own delegations: an executor that has the renewal templates renews every
-    // offer and position before its coin expires
-    for (const renewal of engine.renewalDelegations()) void e?.delegate(renewal);
-    render();
-  });
-  const saved = store.get<Account | null>("account", null);
-  account = saved ?? newAccount();
-  if (!saved) store.set("account", account);
+// The oracle a network's market reads: the one shipped with the app, or on a local stack the one
+// `oracle/scripts/deploy.mjs --out public/oracle.regtest.json` wrote.
+async function oracleOf(n: Net): Promise<OracleParams | undefined> {
+  if (NETWORKS[n].oracle || n !== "regtest") return NETWORKS[n].oracle;
+  try {
+    const res = await fetch("./oracle.regtest.json", { cache: "no-store" });
+    return res.ok ? ((await res.json()) as OracleParams) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
+function showNetworks(): void {
   const networks = $<HTMLSelectElement>("network");
   networks.replaceChildren(
     ...(Object.keys(NETWORKS) as Net[])
@@ -875,6 +872,29 @@ async function boot(): Promise<void> {
     }
     location.search = `?net=${networks.value}`;
   };
+}
+
+async function boot(): Promise<void> {
+  const oracle = await oracleOf(net);
+  if (!oracle) {
+    showNetworks();
+    throw new Error(`no price oracle is deployed on ${NETWORKS[net].name} yet`);
+  }
+  // on a local stack the page signs prices itself; elsewhere they are DIA's
+  const feed = net === "regtest" ? localFeed(sha256(new TextEncoder().encode(TEST_ORACLE_SEED)), () => testPrice) : undefined;
+  engine = await Engine.connect({ ...NETWORKS[net], oracle, feed });
+  void Executor.connect(NETWORKS[net].executorUrl, engine.keys).then((e) => {
+    executor = e;
+    // the market's own delegations: an executor that has the renewal templates renews every
+    // offer and position before its coin expires
+    for (const renewal of engine.renewalDelegations()) void e?.delegate(renewal);
+    render();
+  });
+  const saved = store.get<Account | null>("account", null);
+  account = saved ?? newAccount();
+  if (!saved) store.set("account", account);
+
+  showNetworks();
   $("mainnet-warning").hidden = net !== "mainnet";
   $("oracle-toggle").hidden = net !== "regtest";
   $<HTMLAnchorElement>("oracle-link").hidden = net === "regtest";

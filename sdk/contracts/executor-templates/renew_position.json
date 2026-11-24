@@ -2,7 +2,8 @@
   "format": "template/v1",
   "type": "proof",
   "variables": {
-    "oracle_pk": "bytes",
+    "oracle_txid": "bytes32",
+    "oracle_gidx": "int",
     "renewal_window": "int",
     "max_fee": "int"
   },
@@ -11,10 +12,11 @@
       "name": "position",
       "contract": {
         "definition": {
-          "artifact": "5b9248d5f815957ebdade813e7a1a7a946b3f53d8327ac72447829c3f1c363f6"
+          "artifact": "f8a27223e0f1266982a3520d95f20d3774331b7741f911725387156910f104a8"
         },
         "arguments": {
-          "oraclePk": "<oracle_pk>",
+          "oracleTxid": "<oracle_txid>",
+          "oracleGidx": "<oracle_gidx>",
           "renewalWindow": "<renewal_window>",
           "maxFee": "<max_fee>"
         }

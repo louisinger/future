@@ -1,0 +1,135 @@
+{
+  "formatVersion": 1,
+  "contractName": "PriceGate",
+  "structs": [
+    {
+      "name": "PriceQuote",
+      "fields": [
+        {
+          "name": "price",
+          "type": "int"
+        },
+        {
+          "name": "time",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "constructorInputs": [
+    {
+      "name": "oracleId",
+      "type": "AssetId"
+    },
+    {
+      "name": "minPrice",
+      "type": "int"
+    }
+  ],
+  "functions": [
+    {
+      "name": "open",
+      "arkade": {
+        "inputs": [],
+        "asm": [
+          "<oracleId.gidx>",
+          "<oracleId.txid>",
+          "OP_INSPECTNUMINPUTS",
+          "2",
+          "OP_GREATERTHANOREQUAL",
+          "OP_VERIFY",
+          "1",
+          "OP_SWAP",
+          "OP_ROT",
+          "OP_INSPECTINASSETLOOKUP",
+          "OP_VERIFY",
+          "1",
+          "OP_NUMEQUALVERIFY",
+          "34",
+          "OP_INSPECTPACKET",
+          "OP_VERIFY",
+          "OP_DUP",
+          "OP_SIZE",
+          "OP_NIP",
+          "17",
+          "OP_NUMEQUALVERIFY",
+          "OP_DUP",
+          "0",
+          "1",
+          "OP_SUBSTR",
+          "0x01",
+          "OP_EQUALVERIFY",
+          "OP_DUP",
+          "1",
+          "8",
+          "OP_SUBSTR",
+          "OP_BIN2NUM",
+          "OP_SWAP",
+          "9",
+          "8",
+          "OP_SUBSTR",
+          "OP_BIN2NUM",
+          "OP_OVER",
+          "0",
+          "OP_GREATERTHAN",
+          "OP_IF",
+          "OP_OVER",
+          "1000000000",
+          "OP_LESSTHANOREQUAL",
+          "OP_ELSE",
+          "OP_0",
+          "OP_ENDIF",
+          "OP_VERIFY",
+          "OP_DUP",
+          "0",
+          "OP_GREATERTHAN",
+          "OP_VERIFY",
+          "OP_SWAP",
+          "<minPrice>",
+          "OP_GREATERTHANOREQUAL",
+          "OP_NIP"
+        ]
+      },
+      "leaves": [
+        {
+          "name": "open",
+          "witness": [
+            {
+              "name": "serverSig",
+              "type": "signature",
+              "encoding": "schnorr-64",
+              "injected": true
+            },
+            {
+              "name": "emulatorSig",
+              "type": "signature",
+              "encoding": "schnorr-64",
+              "injected": true
+            }
+          ],
+          "asm": [
+            "<SERVER_KEY>",
+            "OP_CHECKSIGVERIFY",
+            "<EMULATOR_KEY:open>",
+            "OP_CHECKSIG"
+          ]
+        }
+      ]
+    }
+  ],
+  "source": {
+    "entry": "test/price_gate.ark",
+    "files": {
+      "dia_btc_usd_cents.ark": "pragma arkade ^0.1.0;\n\nstruct PriceQuote {\n  int price;\n  int time;\n}\n\n// Reusable DIA BTC/USD (in USD cents) verifier and quote reader.\n// verifyPrice checks DIA's EIP-712 OracleUpdate (Lasernet chain 1050, BTC/USD)\n// and rounds the 18-decimal price to USD cents. Callers add their own time rule.\n// readPrice lets consumers read the verified quote from packet 34 on input 1.\nlibrary DiaBtcUsdCents {\n  const int PACKET = 34;\n  const int SCALE = 10000000000000000;\n  const int HALF = 5000000000000000;\n  const int PRICE_MAX = 1000000000;\n  const bytes32 DOMAIN = 0xf57d55f057fd4aba6b1a7f8bccb6a3e826cf71fd34971f22a39d7ffd6e620fb3;\n  const bytes32 TYPEHASH = 0x24e574fa7512cc24e9109b981256e33759d91bc2ee9b74a2bf633e013c0620b5;\n  const bytes32 INTENT_TYPE = 0xef9b6324ed493183babb66ed98fcf36e9bcb0243ae4c5a29fcd99184b08f1899;\n  const bytes32 VERSION = 0xe6bbd6277e1bf288eed5e8d1780f9a50b239e86b153736bceebccf4ea79d90b3;\n  const bytes32 SYMBOL = 0xee62665949c883f9e0f6f002eac32e00bd59dfe6c34e92a91c37d6a8322d6489;\n  const bytes32 SOURCE = 0xf5a695b63ab16fd8278cb1cf7d29f274a9574b64e0b894750e08c990fc8891bc;\n\n  function word(int n) bytes {\n    return reverseBytes(int2bytes(n, 32));\n  }\n\n  function verifyPrice(\n    bytes oraclePk,\n    int rawPrice,\n    int time,\n    int nonce,\n    int intentExpiry,\n    signature sig\n  ) int {\n    int cents = rawPrice / SCALE;\n    if (rawPrice % SCALE >= HALF) {\n      cents = cents + 1;\n    }\n    require(cents > 0 && cents <= PRICE_MAX, \"price bounds\");\n\n    bytes body = TYPEHASH + INTENT_TYPE + VERSION\n      + word(1050) + word(nonce) + word(intentExpiry)\n      + SYMBOL + word(rawPrice) + word(time) + SOURCE;\n    bytes32 message = bytes32(digest(0x1901 + DOMAIN + bytes32(digest(body, 4)), 4));\n    require(checkSigFromStack(sig, oraclePk, message), \"bad oracle sig\");\n    return cents;\n  }\n\n  function readPrice(AssetId oracleId) PriceQuote {\n    require(tx.numInputs >= 2, \"oracle\");\n    require(tx.inputs[1].assets.lookup(oracleId) == 1, \"oracle\");\n    bytes quote = tx.packet(PACKET);\n    require(size(quote) == 17, \"quote size\");\n    require(substr(quote, 0, 1) == 0x01, \"quote version\");\n    int price = bytes2int(substr(quote, 1, 8));\n    int time = bytes2int(substr(quote, 9, 8));\n    require(price > 0 && price <= PRICE_MAX, \"price bounds\");\n    require(time > 0, \"time\");\n    return PriceQuote { price: price, time: time };\n  }\n}\n",
+      "test/price_gate.ark": "pragma arkade ^0.1.0;\n\nimport \"../dia_btc_usd_cents.ark\";\n\n// A consumer for the oracle's tests: a coin anyone can spend while the price read from the\n// oracle output is at least minPrice.\ncontract PriceGate(AssetId oracleId, int minPrice) {\n  function open() {\n    PriceQuote quote = DiaBtcUsdCents.readPrice(oracleId);\n    require(quote.price >= minPrice, \"price\");\n  }\n}\n"
+    }
+  },
+  "compiler": {
+    "name": "arkadec",
+    "version": "0.1.0",
+    "options": {
+      "optimize": true
+    }
+  },
+  "fingerprint": "sha256:ae060b582ba3b1add3e82c97633669605874e86c4b3b25d2336e35455c179cc7"
+}

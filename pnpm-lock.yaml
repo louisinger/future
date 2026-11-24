@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@louisinger/dia-oracle':
+        specifier: workspace:*
+        version: link:oracle
       '@louisinger/future-sdk':
         specifier: workspace:*
         version: link:sdk
@@ -25,11 +28,45 @@ importers:
         specifier: ^8.3.8
         version: 8.3.8(@types/node@26.6.6)
 
+  oracle:
+    dependencies:
+      '@arkade-os/sdk':
+        specifier: 0.5.13
+        version: 0.5.13(@arkade-os/compiler@0.1.0)
+      '@noble/curves':
+        specifier: ^2.4.0
+        version: 2.4.0
+      '@noble/hashes':
+        specifier: ^2.4.0
+        version: 2.4.0
+      '@scure/base':
+        specifier: ^2.4.0
+        version: 2.4.0
+    devDependencies:
+      '@arkade-os/compiler':
+        specifier: 0.1.0
+        version: 0.1.0
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vite:
+        specifier: ^8.3.8
+        version: 8.3.8(@types/node@26.6.6)
+      vitest:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
+
   sdk:
     dependencies:
       '@arkade-os/sdk':
         specifier: 0.5.13
-        version: 0.5.13
+        version: 0.5.13(@arkade-os/compiler@0.1.0)
+      '@louisinger/dia-oracle':
+        specifier: workspace:*
+        version: link:../oracle
       '@noble/curves':
         specifier: ^2.4.0
         version: 2.4.0
@@ -54,6 +91,10 @@ importers:
         version: 5.1.1(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
 packages:
+
+  '@arkade-os/compiler@0.1.0':
+    resolution: {integrity: sha512-GNiltjTqAvIGclUSGbgIvb+OkpDY5c7hrml5WvhSH5oJv7zrytTVqvDmplOp+nrWpMpnl9rfQs2j/sAI902J3g==}
+    engines: {node: '>=22.12.0'}
 
   '@arkade-os/sdk@0.5.13':
     resolution: {integrity: sha512-BoSXlYLxg8G2hdl93LoKFToeVPn3A+qLTOWsI/0i6J6H1htF9jcFm19tBvFzsn5wVhl41Qy8Y7P12wnqiPE/fQ==}
@@ -726,7 +767,9 @@ packages:
 
 snapshots:
 
-  '@arkade-os/sdk@0.5.13':
+  '@arkade-os/compiler@0.1.0': {}
+
+  '@arkade-os/sdk@0.5.13(@arkade-os/compiler@0.1.0)':
     dependencies:
       '@bitcoinerlab/descriptors-scure': 3.1.7
       '@marcbachmann/cel-js': 8.0.0
@@ -738,6 +781,8 @@ snapshots:
       bip68: 1.0.4
       micro-packed: 0.11.1
       ws-electrumx-client: 1.0.5
+    optionalDependencies:
+      '@arkade-os/compiler': 0.1.0
     transitivePeerDependencies:
       - '@ledgerhq/ledger-bitcoin'
       - bip32

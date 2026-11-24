@@ -1,9 +1,0 @@
-{
-  "name": "schnorr",
-  "about": "A Schnorr signature over sha256(price | time), the two 8-byte little-endian integers of the price note. oraclePk is the signer's x-only key.",
-  "inputs": [{"name": "oracleSig", "type": "signature"}],
-  "asm": [
-    "34", "OP_INSPECTPACKET", "OP_VERIFY", "1", "16", "OP_SUBSTR", "OP_SHA256",
-    "<oraclePk>", "OP_CHECKSIGFROMSTACK", "OP_VERIFY"
-  ]
-}

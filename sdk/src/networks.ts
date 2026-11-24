@@ -1,11 +1,15 @@
-/** Where a network's operator, emulator and executor answer. */
+import type { OracleParams } from "@louisinger/dia-oracle";
+
+/** Where a network's operator, emulator and executor answer, and the oracle its market reads. */
 export interface Network {
   arkUrl: string;
   emulatorUrl: string;
   executorUrl: string;
+  /** Absent while no oracle output is deployed on the network. */
+  oracle?: OracleParams;
 }
 
-export const NETWORKS = {
+export const NETWORKS: Record<"mainnet" | "mutinynet" | "regtest", Network> = {
   mainnet: {
     arkUrl: "https://arkade.computer",
     emulatorUrl: "https://emulator.arkade.computer",
@@ -21,4 +25,4 @@ export const NETWORKS = {
     emulatorUrl: "http://localhost:7073",
     executorUrl: "http://localhost:7080",
   },
-} satisfies Record<string, Network>;
+};

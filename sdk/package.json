@@ -15,24 +15,26 @@
       "default": "./dist/index.js"
     },
     "./artifacts/*": "./contracts/artifacts/*",
-    "./templates/*": "./contracts/executor-templates/*",
-    "./oracles/*": "./contracts/oracles/*"
+    "./templates/*": "./contracts/executor-templates/*"
   },
   "files": [
     "dist",
     "contracts/artifacts",
-    "contracts/executor-templates",
-    "contracts/oracles",
-    "contracts/src"
+    "contracts/executor-templates"
   ],
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
     "test": "vitest run test/unit",
     "test:e2e": "vitest run test/e2e",
     "typecheck": "tsc --noEmit",
-    "prepack": "pnpm build"
+    "prepack": "pnpm build",
+    "pretest": "pnpm -C ../oracle build",
+    "pretest:e2e": "pnpm -C ../oracle build",
+    "pretypecheck": "pnpm -C ../oracle build",
+    "prebuild": "pnpm -C ../oracle build"
   },
   "dependencies": {
+    "@louisinger/dia-oracle": "workspace:*",
     "@arkade-os/sdk": "0.5.13",
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0",

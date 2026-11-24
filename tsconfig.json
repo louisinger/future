@@ -21,6 +21,9 @@
     "paths": {
       "@louisinger/future-sdk": [
         "./sdk/src/index.ts"
+      ],
+      "@louisinger/dia-oracle": [
+        "./oracle/src/index.ts"
       ]
     }
   },

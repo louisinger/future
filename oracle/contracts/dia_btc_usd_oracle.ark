@@ -1,0 +1,60 @@
+pragma arkade ^0.1.0;
+
+import "./dia_btc_usd_cents.ark";
+
+// Recursive oracle output holding 1 unit of oracleId.
+// Consumers co-spend it as input 1. verify checks a live DIA signature on the
+// fly, pins (price, time) in tx.packet(DiaBtcUsdCents.PACKET), and continues
+// the output on output 0. adminPk rotates oraclePk via migrate without changing
+// consumers. renew lets anyone, such as an executor, take the output into a
+// batch before it expires.
+//
+// oracleId may have several units, each in an output of its own: consumers take
+// any of them, so spends of one do not wait on spends of another.
+contract DiaBtcUsdOracle(
+  AssetId oracleId,
+  bytes oraclePk,
+  pubkey adminPk,
+  int renewalWindow,
+  int maxFee
+) {
+  function verify(
+    int rawPrice,
+    int time,
+    int nonce,
+    int intentExpiry,
+    signature oracleSig
+  ) {
+    require(tx.numInputs >= 2, "consumer required");
+    require(checkTime(time), "future price");
+    require(!checkTime(intentExpiry), "expired intent");
+    int price = DiaBtcUsdCents.verifyPrice(oraclePk, rawPrice, time, nonce, intentExpiry, oracleSig);
+    require(tx.packet(DiaBtcUsdCents.PACKET) == 0x01 + int2bytes(price, 8) + int2bytes(time, 8), "quote packet");
+    require(tx.outputs[0].script == tx.input.current.script, "script");
+    require(tx.outputs[0].value >= tx.input.current.value, "value");
+    require(tx.outputs[0].assets.lookup(oracleId) == 1, "identity");
+  }
+
+  // The batch output keeps this script and the identity unit; up to maxFee sats
+  // leave as the batch's fee.
+  function renew() {
+    require(checkTime(this.expiry - renewalWindow), "too early");
+    require(tx.intent.field(bytes("type")) == bytes("register"), "not a registration");
+    require(tx.intent.field(bytes("onchain_output_indexes")) == bytes("[]"), "onchain output");
+    int out = this.activeInputIndex - 1;
+    require(tx.outputs[out].value + maxFee >= tx.input.current.value, "fee");
+    require(this.tunnel(out, { script: true, value: false, assets: true }), "tunnel");
+  }
+
+  function migrate(signature adminSig) {
+    require(tx.numInputs == 1, "single input");
+    require(checkSig(adminSig, adminPk), "admin");
+    require(tx.outputs[0].value >= tx.input.current.value, "value");
+    require(tx.outputs[0].assets.lookup(oracleId) == 1, "identity");
+  }
+
+  function unilateral(signature adminSig) tapscript {
+    require(older(operatorExitDelay));
+    require(checkSig(adminSig, adminPk));
+  }
+}

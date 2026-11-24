@@ -1,5 +1,5 @@
 // Fetches the latest signed BTC/USD update from DIA and prints it with the key that signed it.
-// Run it to learn the key to pin in src/dia.ts when DIA's signer changes:
+// Run it to learn which of DIA's signers published last, and the key of a new one:
 //   node scripts/dia-signer.mjs
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";

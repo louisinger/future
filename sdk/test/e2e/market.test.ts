@@ -3,17 +3,27 @@
 // market by plain sends to an address, as an external wallet would.
 
 import { execSync } from "node:child_process";
+import {
+  EsploraProvider,
+  InMemoryContractRepository,
+  InMemoryWalletRepository,
+  RestIndexerProvider,
+  RestOperatorProvider,
+  SingleKey,
+  Wallet,
+} from "@arkade-os/sdk";
+import { type PriceFeed, connect, deploy, dia, localFeed } from "@louisinger/dia-oracle";
 import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
 import { hex } from "@scure/base";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Engine, ForeignAddressError, NoCoinError, TEMPLATES, newAccount, type Account } from "../../src/engine";
 import { Executor } from "../../src/executor";
-import { type Oracle, dia, localOracle, schnorrOracle, trustedUpdate } from "../../src/oracle";
 import { NoOfferError, levels, type OfferTerms, type Position, type Quote, type TradeTerms } from "../../src/payoff";
 
 const ARK_URL = "http://localhost:7070";
 const EMULATOR_URL = "http://localhost:7073";
 const EXECUTOR_URL = "http://localhost:7080";
+const EXPLORER_URL = "http://localhost:3000";
 const DEPOSIT = 10_000;
 
 const sh = (cmd: string) => execSync(cmd, { encoding: "utf8", timeout: 90_000, stdio: "pipe" }).trim();
@@ -32,9 +42,12 @@ async function eventually<T>(action: () => Promise<T>, seconds = 30): Promise<T>
   }
 }
 
+// The wallet that issues each desk's oracle.
+let deployer: Wallet;
+
 /**
- * A market of its own, with the keys of one provider and one trader. Its prices are signed by a
- * key of its own, at whatever price a test asks for.
+ * A market of its own, with the keys of one provider and one trader. It reads prices from an
+ * oracle output of its own, bound to a signer that signs whatever price a test asks for.
  */
 class Desk {
   private constructor(
@@ -46,12 +59,18 @@ class Desk {
     readonly traderPayout: string,
   ) {}
 
-  static async open(make?: (price: () => number) => Oracle): Promise<Desk> {
+  static async open(make?: (price: () => number) => PriceFeed): Promise<Desk> {
     const quote = { price: 0 };
-    const oracle = make
+    const feed = make
       ? make(() => quote.price)
-      : localOracle(secp256k1.utils.randomSecretKey(), () => quote.price);
-    const engine = await Engine.connect({ arkUrl: ARK_URL, emulatorUrl: EMULATOR_URL, oracle });
+      : localFeed(secp256k1.utils.randomSecretKey(), () => quote.price);
+    const conn = await connect({ arkUrl: ARK_URL, emulatorUrl: EMULATOR_URL });
+    const admin = hex.encode(schnorr.getPublicKey(schnorr.utils.randomSecretKey()));
+    const oracle = await deploy(deployer, conn, feed, { adminPk: admin, lanes: 2 });
+    const engine = await Engine.connect({ arkUrl: ARK_URL, emulatorUrl: EMULATOR_URL, oracle, feed });
+    await eventually(async () => {
+      if ((await engine.oracle.outputs()).length !== 2) throw new Error("the oracle is not live yet");
+    });
     const program = () => hex.encode(schnorr.getPublicKey(schnorr.utils.randomSecretKey()));
     return new Desk(engine, quote, newAccount(), newAccount(), program(), program());
   }
@@ -107,7 +126,7 @@ class Desk {
   }
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   try {
     sh("docker exec arkd ark init --password secret --server-url localhost:7070 --explorer http://chopsticks:3000");
   } catch {
@@ -115,7 +134,22 @@ beforeAll(() => {
   }
   const note = sh("docker exec arkd arkd note --amount 1000000").split("\n").pop() as string;
   sh(`docker exec arkd ark redeem-notes -n ${note} --password secret`);
-}, 120_000);
+  deployer = await Wallet.create({
+    identity: SingleKey.fromRandomBytes(),
+    operatorProvider: new RestOperatorProvider(ARK_URL),
+    indexerProvider: new RestIndexerProvider(ARK_URL),
+    onchainProvider: new EsploraProvider(EXPLORER_URL),
+    storage: {
+      walletRepository: new InMemoryWalletRepository(),
+      contractRepository: new InMemoryContractRepository(),
+    },
+    settlement: false,
+  });
+  pay(await deployer.getAddress(), 400_000);
+  await eventually(async () => {
+    if ((await deployer.getBalance()).available < 400_000) throw new Error("the deployer is not funded yet");
+  });
+}, 180_000);
 
 describe("a market", () => {
   it("opens two longs against an offer, closes one in profit, liquidates the other, withdraws the rest", async () => {
@@ -238,54 +272,10 @@ describe("a market", () => {
     });
   }, 180_000);
 
-  it("runs the same market on a Schnorr price signer", async () => {
-    const d = await Desk.open((price) => schnorrOracle(schnorr.utils.randomSecretKey(), price));
-    expect(() => d.engine.offerDelegation(d.offerTerms(10))).toThrow("no executor templates");
-    await d.offer(10);
-
-    const terms = d.tradeTerms(0, 2, 5_000);
-    pay(d.engine.tradeDeposit(terms).address);
-    const quote = await eventually(() => d.fill(terms, 10_000_000));
-    expect(quote.entryPrice).toBe(10_010_000);
-    const first = await d.position();
-    await d.close(first, 10_500_000, d.trader.key);
-    await eventually(async () => expect(await d.paid(d.traderPayout)).toBe(10_933));
-
-    pay(d.engine.tradeDeposit(terms).address);
-    await eventually(() => d.fill(terms, 10_000_000));
-    const second = await d.position();
-    await expect(d.resolve(second, 9_900_000)).rejects.toThrow("failed to execute arkade script");
-    await d.resolve(second, 6_000_000);
-    await eventually(async () => expect(await d.paid(d.lpPayout)).toBe(4_067 + DEPOSIT + 5_000));
-  }, 180_000);
-
-  it("finds the trusted signer's update in DIA's events when the registry's latest is not its own", async () => {
-    // the registry's latest answer is altered, as if the other signer had published last; the
-    // events and the update they lead to are DIA's own
-    let latest = true;
-    const rpc = async (method: string, params: unknown[]) => {
-      const res = await fetch("https://rpc.diadata.org/", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      });
-      const { result } = (await res.json()) as { result: unknown };
-      if (!latest || method !== "eth_call") return result;
-      latest = false;
-      const words = String(result).slice(2).match(/.{64}/g) as string[];
-      words[7] = (BigInt(`0x${words[7]}`) + 1n).toString(16).padStart(64, "0");
-      return `0x${words.join("")}`;
-    };
-    const update = await trustedUpdate(rpc);
-    expect(latest).toBe(false);
-    expect(Math.floor(Date.now() / 1000) - update.time).toBeLessThan(90);
-    expect(update.price).toBeGreaterThan(1_000_000);
-  }, 60_000);
-
   it("opens and closes a trade on DIA's live signed price", async () => {
     const d = await Desk.open(() => dia());
     await d.offer(10);
-    const { price } = await eventually(() => d.engine.oracle.latest(), 60);
+    const { price } = await eventually(() => d.engine.latest(), 60);
 
     const terms = {
       ...d.tradeTerms(0, 2, 5_000),

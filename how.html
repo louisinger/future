@@ -15,7 +15,7 @@
   <section class="intro">
     <h1>A trade is a coin with rules</h1>
     <p>There is no exchange account here and nobody holds your money. The market is four
-      contracts and eleven kinds of transaction. A contract is an address: what is written in
+      contracts of its own, a shared price oracle, and eleven kinds of transaction. A contract is an address: what is written in
       it decides the only transactions that can ever spend a coin sent there. Arkade checks
       those rules before it signs anything.</p>
     <nav class="toc" aria-label="On this page">
@@ -90,7 +90,7 @@
     <div class="notes">
       <div>
         <h3>Price note (34)</h3>
-        <ul class="plain"><li>Price in USD cents and the time it was signed</li><li>Must be the price DIA signed, rounded to the cent</li></ul>
+        <ul class="plain"><li>Price in USD cents and the time it was signed</li><li>Written by the price oracle from the price DIA signed, rounded to the cent</li></ul>
       </div>
       <div>
         <h3>Offer note (64)</h3>
@@ -122,9 +122,12 @@
         own. Deposits do: their owner can exit on-chain.</li>
       <li><b>The price.</b> Every price is a BTC/USD update signed by
         <a href="https://www.diadata.org/docs" target="_blank" rel="noopener">DIA</a>, an oracle
-        network. The contracts check DIA's signature themselves, so no page and no server can
-        make one up. DIA's key could: whoever holds it decides every settlement. On a local
-        test stack the page signs prices with a test key instead.</li>
+        network. A separate contract, the price oracle, checks DIA's signature: a transaction that
+        needs a price spends one of the oracle's coins along with its own, and the oracle is put
+        straight back. The market's contracts only check that the genuine oracle was there, which
+        they recognise by a token it alone holds. So no page and no server can make a price up.
+        Two keys could: DIA's, and the oracle's admin key, which can move the token to other
+        rules.</li>
       <li><b>Someone showing up.</b> Rules say what may happen, not that it does. A trade opens or
         settles when someone submits the transaction.</li>
       <li><b>Time.</b> Coins expire. A coin made by a transaction expires with the earliest of the

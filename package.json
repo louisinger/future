@@ -7,11 +7,12 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "pnpm -C sdk test",
-    "test:e2e": "pnpm -C sdk test:e2e",
-    "typecheck": "tsc --noEmit && pnpm -C sdk typecheck"
+    "test": "pnpm -C oracle test && pnpm -C sdk test",
+    "test:e2e": "pnpm -C oracle test:e2e && pnpm -C sdk test:e2e",
+    "typecheck": "tsc --noEmit && pnpm -C oracle typecheck && pnpm -C sdk typecheck"
   },
   "dependencies": {
+    "@louisinger/dia-oracle": "workspace:*",
     "@louisinger/future-sdk": "workspace:*",
     "@noble/hashes": "^2.4.0"
   },

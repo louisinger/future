@@ -29,33 +29,28 @@ ignores packets the contracts could not have written (`validPosition`, `validOff
 
 ## Price
 
-A spend that needs a price carries packet 34, the price in cents and its time, and a witness
-that proves an oracle attested it. The contracts check the packet's shape and that its time is
-not ahead of the emulator's clock; the proof itself is a module. Each contract source in
-`sdk/contracts/src` has a `$oracle` marker where a price is checked, and a file of
-`sdk/contracts/oracles` gives the witness inputs and the script that go there. The script
-verifies packet 34 against `oraclePk`, a constructor argument of the position, offer and trade
-deposit contracts. So the check and the key are part of every address: another oracle, or
-another key, is another market, and an open market cannot switch.
+A spend that needs a price carries packet 34, the price in cents and its time. The market's
+contracts do not verify who signed it. They require that input 1 of the transaction holds one
+unit of an identity asset, `oracleTxid` and `oracleGidx` in their constructors, and then trust
+packet 34.
 
-**`dia`**, the market of the app. A price is a DIA `OracleUpdate` for `BTC/USD`: an EIP-712
-message of DIA's registry on Lasernet (chain 1050,
-`0x5612599CF48032d7428399d5Fcb99eDcc75c06A7`), signed with an Ethereum key. The witness is DIA's
-price (18 decimals), nonce, expiry and signature. The script:
+That asset only ever sits in outputs of the oracle contract, `oracle/`. Spent in a transaction
+with another input, the oracle contract:
 
-1. refuses an update past DIA's own expiry, an hour after it was signed;
-2. rounds the price to the cent, half up, and requires packet 34 to hold exactly that;
-3. rebuilds the EIP-712 digest with keccak (`OP_DIGEST`) from the witness and the packet's time;
-4. checks the ECDSA signature against the key (`OP_CHECKSIGFROMSTACK`, key prefixed `0x10`).
+1. takes DIA's signed `OracleUpdate` as witness and verifies it against the key it holds: the
+   EIP-712 digest rebuilt with keccak, an ECDSA `OP_CHECKSIGFROMSTACK`;
+2. refuses a price dated ahead of the emulator's clock, or past DIA's expiry, an hour after it
+   was signed;
+3. requires packet 34 to hold that price rounded to the cent, and its time;
+4. requires output 0 to be itself again: same script, same value, the identity unit.
 
-On regtest the page signs the same message with a test key.
+So a price transaction is `[consumer, oracle, …] → [oracle, …]`. The identity asset is in every
+address of the market: another oracle is another market. DIA's key is not: the oracle's admin
+key can move the unit to a script holding another key.
 
-**`schnorr`**. A Schnorr signature of an x-only key over `sha256(price | time)`, the sixteen
-bytes of the packet after its version. It has no expiry of its own, so a position settles on
-any price signed since its start, however old: the signer has to be trusted not to leave a
-stale one around.
-
-The executor templates are built on the `dia` contracts only.
+The asset has several units, each in an oracle output of its own, so that transactions do not
+all spend the same coin. The contracts require exactly one unit on input 1, and every unit is
+locked by the oracle contract from issuance, with no control asset to mint more.
 
 ## Payoff
 
@@ -76,9 +71,9 @@ profit, so it is the take-profit; leverage sets the liquidation.
 | | Spends | Creates | Needs |
 |---|---|---|---|
 | Register | offer deposit | offer + packet 64 | nothing |
-| Open | trade deposit, offer | position + packet 65, offer continuation | a DIA price under 120 s old |
-| Settle | position | trader payout, provider payout | a DIA price after the start, under an hour old; past expiry, or a side down to 1% of the margin |
-| Close | position | same | the trader's signature, a DIA price under 120 s old |
+| Open | trade deposit, oracle, offer | oracle, position + packet 65, offer continuation | a DIA price under 120 s old |
+| Settle | position, oracle | oracle, trader payout, provider payout | a DIA price after the start, under an hour old; past expiry, or a side down to 1% of the margin |
+| Close | position, oracle | same | the trader's signature, a DIA price under 120 s old |
 | Cancel | trade deposit | trader payout | the trader's signature |
 | Refund | trade deposit | trader payout | the deadline passed (CLTV leaf) |
 | Withdraw | offer | provider payout | the provider's signature |
@@ -114,11 +109,15 @@ cancelling and withdrawing need the owner's signature at the time: a page does t
 ## What it does not protect against
 
 - **DIA.** Its key decides every price: a wrong or stolen signature settles trades at a wrong
-  price. If DIA stops publishing or rotates its key, open positions cannot settle at all, since
-  every settlement needs a price signed by the key in the address; offers can still be
-  withdrawn and deposits cancelled. DIA has two signers taking turns and the contracts take
-  only one of them, the one signing most updates: if that one stops, the other does not help. There is no fallback oracle and no way to change the key of
-  an open market.
+  price. If DIA stops publishing, open positions cannot settle; offers can still be withdrawn
+  and deposits cancelled.
+- **The oracle's admin key.** It can move the oracle's identity units to any script, including
+  one that accepts any price. It is what lets DIA's key be rotated, and it is trusted as much
+  as DIA.
+- **The oracle's coins.** Every open, close and settlement spends one. If they all expire or
+  are moved, nothing that needs a price can happen until they are back. A consumer's coin can
+  shorten the life of the oracle coin it is spent with, since a new coin expires with the
+  earliest coin spent; an executor renews them, and each holds sats for that.
 - **Which price settles.** A position past its end, or liquidated, settles on any DIA update
   that is newer than its start (its end, for an expired one) and under an hour old. Whoever
   submits the transaction picks among them, so a side can wait up to an hour for a better price
@@ -144,16 +143,20 @@ cancelling and withdrawing need the owner's signature at the time: a page does t
 - `sdk/contracts/`: each script executed in the emulator's engine, accepted and refused cases, a
   price sweep checking settlement against the payoff for longs, shorts, fees and near-dust
   pots, and the three executord templates built by the template engine.
-  The DIA price check runs on updates signed like DIA's by a test key: rounding at half a
-  cent, an expired update, another signer, a tampered nonce, a price of zero. A trade's life
-  runs on each price check, and the generated artifacts are pinned.
+  A price is refused from a coin that is not the oracle, with no oracle in the transaction,
+  with the oracle's asset on another input, and from a coin holding two units.
 - `sdk/test/unit`: the arithmetic, state validation, byte parity of the SDK's derivation with the
   Go tests' scripts, a recorded DIA response, and the price client's caching and back-off.
 - `sdk/test/e2e`: on regtest, with real arkd and emulator: a market's life, a short to its
   take-profit, a cancelled deposit, the holding fee at a non-round price, address checks, a
   trade opened and closed on DIA's live price and real signature, and executord publishing an
-  offer and refunding a late deposit from delegations alone, and the same market on a Schnorr
-  price signer.
+  offer and refunding a late deposit from delegations alone. Each market deploys its own
+  oracle.
+- `oracle/test`: the DIA client, that the oracle's source compiles to its artifact, and on
+  regtest: deploying an oracle, a consumer reading its price, a forged or insufficient price
+  refused, several consumers at once, DIA's live signature, and executord renewing an output.
+  The oracle contract's own checks (rounding, DIA's expiry) run only inside those end-to-end
+  cases, not one by one.
 - By hand in a browser: the page connects on mainnet, mutinynet and regtest and shows DIA's
   price; no horizontal overflow at 320 and 375 pixels on either page.
 - `renew_offer` and `renew_position` are built and executed in the engine, on a coin left by

@@ -13,7 +13,8 @@
     "deadline": "int",
     "exit_delay": "int",
     "max_carry_bps": "int",
-    "oracle_pk": "bytes",
+    "oracle_txid": "bytes32",
+    "oracle_gidx": "int",
     "max_spread_bps": "int"
   },
   "inputs": [
@@ -21,7 +22,7 @@
       "name": "deposit",
       "contract": {
         "definition": {
-          "artifact": "020411f9cb69c1e6855694236a050551fa83d8162b5a0e6ce7d4d5456f8c5710"
+          "artifact": "7ee50dc7e0cd4efe1da1745625cb0f1ccd9d0c7224e8be949531016d72576c79"
         },
         "arguments": {
           "positionProgram": "<position_program>",
@@ -35,7 +36,8 @@
           "deadline": "<deadline>",
           "exitDelay": "<exit_delay>",
           "maxCarryBps": "<max_carry_bps>",
-          "oraclePk": "<oracle_pk>",
+          "oracleTxid": "<oracle_txid>",
+          "oracleGidx": "<oracle_gidx>",
           "maxSpreadBps": "<max_spread_bps>"
         }
       },

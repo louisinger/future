@@ -1,5 +1,5 @@
 import { arkade } from "@arkade-os/sdk";
-import { schnorr, secp256k1 } from "@noble/curves/secp256k1.js";
+import { schnorr } from "@noble/curves/secp256k1.js";
 import { hex } from "@scure/base";
 import { describe, expect, it } from "vitest";
 import { ARTIFACTS } from "../../src/engine";
@@ -18,36 +18,26 @@ describe("contract derivation", () => {
       keys,
     ).pkScript;
 
-  const signer = new Uint8Array(32).fill(3);
-  const markets = [
-    { scheme: "dia", prefix: "", oraclePk: Uint8Array.of(0x10, ...secp256k1.getPublicKey(signer, true)) },
-    { scheme: "schnorr", prefix: "schnorr_", oraclePk: schnorr.getPublicKey(signer) },
-  ] as const;
+  const market = { oracleTxid: new Uint8Array(32).fill(3), oracleGidx: 0n, renewalWindow: 86400n, maxFee: 1000n };
+  const position = script(ARTIFACTS.position, market);
+  const offer = script(ARTIFACTS.offer, { ...market, positionProgram: position.slice(2) });
 
-  describe.each(markets)("on the $scheme oracle", ({ scheme, prefix, oraclePk }) => {
-    const artifacts = ARTIFACTS[scheme];
-    const pinned = vectors as Record<string, string>;
-    const market = { oraclePk, renewalWindow: 86400n, maxFee: 1000n };
-    const position = script(artifacts.position, market);
-    const offer = script(artifacts.offer, { ...market, positionProgram: position.slice(2) });
-
-    it("position", () => expect(hex.encode(position)).toBe(pinned[`${prefix}position`]));
-    it("offer", () => expect(hex.encode(offer)).toBe(pinned[`${prefix}offer`]));
-    it("offer deposit", () => {
-      const got = script(artifacts.offerDeposit, {
-        offerProgram: offer.slice(2), lpPk: key(5), lpProgram: key(7), spreadBps: 10n, maxLeverage: 50n,
-        maxDuration: 604800n, carryBps: 25n, exitDelay: 4194308n,
-      });
-      expect(hex.encode(got)).toBe(pinned[`${prefix}offer_deposit`]);
+  it("position", () => expect(hex.encode(position)).toBe(vectors.position));
+  it("offer", () => expect(hex.encode(offer)).toBe(vectors.offer));
+  it("offer deposit", () => {
+    const got = script(ARTIFACTS.offerDeposit, {
+      offerProgram: offer.slice(2), lpPk: key(5), lpProgram: key(7), spreadBps: 10n, maxLeverage: 50n,
+      maxDuration: 604800n, carryBps: 25n, exitDelay: 4194308n,
     });
-    it("trade deposit", () => {
-      const got = script(artifacts.tradeDeposit, {
-        oraclePk, maxSpreadBps: 10n,
-        positionProgram: position.slice(2), traderPk: key(4), traderProgram: key(6), side: 1n, leverage: 10n,
-        capBps: 20000n, limitPrice: 5_940_000n, duration: 86400n, deadline: 1_800_000_000n, maxCarryBps: 100n,
-        exitDelay: 4194308n,
-      });
-      expect(hex.encode(got)).toBe(pinned[`${prefix}trade_deposit`]);
+    expect(hex.encode(got)).toBe(vectors.offer_deposit);
+  });
+  it("trade deposit", () => {
+    const got = script(ARTIFACTS.tradeDeposit, {
+      oracleTxid: market.oracleTxid, oracleGidx: 0n, maxSpreadBps: 10n,
+      positionProgram: position.slice(2), traderPk: key(4), traderProgram: key(6), side: 1n, leverage: 10n,
+      capBps: 20000n, limitPrice: 5_940_000n, duration: 86400n, deadline: 1_800_000_000n, maxCarryBps: 100n,
+      exitDelay: 4194308n,
     });
+    expect(hex.encode(got)).toBe(vectors.trade_deposit);
   });
 });
