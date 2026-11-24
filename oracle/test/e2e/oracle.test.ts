@@ -129,6 +129,22 @@ describe("an oracle output", () => {
     const details = await conn.indexer.getAssetDetails(params.assetId);
     expect(details.supply).toBe(2n);
     expect(details.controlAssetId).toBeUndefined();
+    await oracle.audit();
+  }, 120_000);
+
+  it("fails its audit when a unit of its asset is anywhere but in its outputs", async () => {
+    // an oracle described with the right asset and another admin key: its address holds no unit
+    const elsewhere = new DiaOracle(
+      conn,
+      { ...params, adminPk: hex.encode(schnorr.getPublicKey(schnorr.utils.randomSecretKey())) },
+      feed,
+    );
+    await expect(elsewhere.audit()).rejects.toThrow("2 units and 0 are in its outputs");
+    // an asset that kept a control asset can be minted again
+    const { assetId: control } = await wallet.assetManager.issue({ amount: 1n });
+    const { assetId: mintable } = await wallet.assetManager.issue({ amount: 1n, controlAssetId: control });
+    const loose = new DiaOracle(conn, { ...params, assetId: mintable }, feed);
+    await eventually(() => expect(loose.audit()).rejects.toThrow("control asset"));
   }, 120_000);
 
   it("gives its price to a consumer and continues at the same address", async () => {

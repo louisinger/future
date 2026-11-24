@@ -174,6 +174,27 @@ export class DiaOracle {
   }
 
   /**
+   * Checks that the identity asset can only ever be where this oracle's rules hold it: it has no
+   * control asset, so no unit can be minted, and every unit that exists is in a live output of
+   * this oracle. A unit anywhere else is a coin that passes for the oracle with any price.
+   *
+   * Run it before trusting an oracle someone else deployed. It can fail for a moment while an
+   * output is being spent, until the indexer lists the new one.
+   */
+  async audit(): Promise<void> {
+    const [details, live] = await Promise.all([
+      this.conn.indexer.getAssetDetails(this.params.assetId),
+      this.outputs(),
+    ]);
+    if (details.controlAssetId !== undefined) {
+      throw new Error("the oracle's asset has a control asset: more units can be minted");
+    }
+    if (details.supply !== BigInt(live.length)) {
+      throw new Error(`the oracle's asset has ${details.supply} units and ${live.length} are in its outputs`);
+    }
+  }
+
+  /**
    * Sends a transaction that reads the price. `start` returns a builder holding the consumer's
    * single `.from()`; `finish` adds the consumer's outputs and packets once the price is known.
    * The oracle lands where consumers read it: input 1 and output 0.

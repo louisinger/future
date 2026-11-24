@@ -56,7 +56,12 @@ const { txid, update } = await oracle.spend(
 );
 ```
 
-`params` is what the oracle's operator publishes: `{ assetId, oraclePk, adminPk }`. `spend`
+`params` is what the oracle's operator publishes: `{ assetId, oraclePk, adminPk }`. Before
+trusting an oracle you did not deploy, run `await oracle.audit()`: it checks that the identity
+asset has no control asset and that every unit of it is in one of the oracle's outputs. A unit
+held anywhere else would pass for the oracle with any price.
+
+ `spend`
 puts the oracle at input 1 and output 0, attaches the identity unit and packet 34, and retries
 on another output when one is taken. `attach` does the same without sending.
 
