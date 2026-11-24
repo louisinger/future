@@ -3,5 +3,10 @@
     "assetId": "30195f37f8c1697ac90d922cd44b60108cfc2d2781ecc71254742ec95fb7a7380000",
     "oraclePk": "100211ee120bca9f272034d98b1b026bb4ab735ebeb5da8be6a69bf7ee0ea24cfd48",
     "adminPk": "0d39790ec5e11c26e34e24daf75df82c9f3d50bc82ce55097b4e3429ee1a6424"
+  },
+  "mainnet": {
+    "assetId": "75bdeeaff59a25d46e4034a1aa245f8294514b2475403f330030843b775971260000",
+    "oraclePk": "100211ee120bca9f272034d98b1b026bb4ab735ebeb5da8be6a69bf7ee0ea24cfd48",
+    "adminPk": "aed46b0341cc642e6ed15e8a51a80efb761bc3a2a8beea73526639fc1d43f6ce"
   }
 }
