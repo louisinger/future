@@ -12,6 +12,7 @@
 //   --key      the funding wallet's key, hex; a new one is made and printed otherwise
 //   --explorer an esplora URL, for a local stack
 //   --out      a file to write the oracle's parameters to, besides printing them
+//   --executor an executor's public URL: once deployed, asks it to renew the oracle's outputs
 //
 // It prints an address and waits for it to hold lanes * sats, plus a little for the operator's
 // dust. The admin key can move the oracle to another script: keep its secret offline.
@@ -36,6 +37,7 @@ const args = Object.fromEntries(
 for (const required of ["ark", "emulator", "admin"]) {
   if (!args[required]) throw new Error(`--${required} is required`);
 }
+if (!/^[0-9a-f]{64}$/.test(args.admin)) throw new Error("--admin is an x-only key: 64 hexadecimal characters");
 const lanes = Number(args.lanes ?? 3);
 const sats = Number(args.sats ?? 10_000);
 
@@ -49,6 +51,12 @@ function signerKey(spec = "dia") {
   if (!/^10(02|03)[0-9a-f]{64}$/.test(spec)) throw new Error("--signer is not a 0x10-prefixed compressed key");
   return spec;
 }
+
+// fail on a wrong operator, emulator or signer before any money moves
+const conn = await connect({ arkUrl: args.ark, emulatorUrl: args.emulator });
+// deploying needs the signer's key, not its prices
+const feed = { key: hex.decode(signerKey(args.signer)), latest: () => Promise.reject(new Error("no feed")) };
+console.error(`network ${conn.network}, signer ${hex.encode(feed.key)}, ${lanes} outputs of ${sats} sats`);
 
 const identity = args.key ? SingleKey.fromHex(args.key) : SingleKey.fromRandomBytes();
 const wallet = await Wallet.create({
@@ -67,12 +75,17 @@ if (!args.key) console.error("funding wallet key (keep it until the oracle is li
 console.error(`send ${needed} sats to ${await wallet.getAddress()}`);
 while ((await wallet.getBalance()).available < needed) await new Promise((r) => setTimeout(r, 3_000));
 
-const conn = await connect({ arkUrl: args.ark, emulatorUrl: args.emulator });
-// deploying needs the signer's key, not its prices
-const feed = { key: hex.decode(signerKey(args.signer)), latest: () => Promise.reject(new Error("no feed")) };
 const params = await deploy(wallet, conn, feed, { adminPk: args.admin, lanes, sats });
 const oracle = new DiaOracle(conn, params, feed);
 const out = JSON.stringify({ ...params, address: oracle.address, network: conn.network }, null, 2);
 if (args.out) writeFileSync(args.out, `${out}\n`);
 console.log(out);
+if (args.executor) {
+  const res = await fetch(`${args.executor}/v1/delegation`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(oracle.renewal()),
+  });
+  console.error(res.ok ? "the executor will renew the oracle's outputs" : `the executor refused the renewal: ${await res.text()}`);
+}
 process.exit(0);
