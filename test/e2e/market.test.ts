@@ -9,7 +9,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { Engine, ForeignAddressError, NoCoinError, newAccount, type Account } from "../../src/engine";
 import templateIds from "../../contracts/testdata/templates.json";
 import { Executor } from "../../src/executor";
-import { type Oracle, dia, localOracle } from "../../src/oracle";
+import { type Oracle, dia, localOracle, trustedUpdate } from "../../src/oracle";
 import { NoOfferError, levels, type OfferTerms, type Position, type Quote, type TradeTerms } from "../../src/payoff";
 
 const ARK_URL = "http://localhost:7070";
@@ -219,6 +219,29 @@ describe("a market", () => {
       expect(provider).toBeLessThan(5_000 + 1_000);
     });
   }, 180_000);
+
+  it("finds the trusted signer's update in DIA's events when the registry's latest is not its own", async () => {
+    // the registry's latest answer is altered, as if the other signer had published last; the
+    // events and the update they lead to are DIA's own
+    let latest = true;
+    const rpc = async (method: string, params: unknown[]) => {
+      const res = await fetch("https://rpc.diadata.org/", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      });
+      const { result } = (await res.json()) as { result: unknown };
+      if (!latest || method !== "eth_call") return result;
+      latest = false;
+      const words = String(result).slice(2).match(/.{64}/g) as string[];
+      words[7] = (BigInt(`0x${words[7]}`) + 1n).toString(16).padStart(64, "0");
+      return `0x${words.join("")}`;
+    };
+    const update = await trustedUpdate(rpc);
+    expect(latest).toBe(false);
+    expect(Math.floor(Date.now() / 1000) - update.time).toBeLessThan(90);
+    expect(update.price).toBeGreaterThan(1_000_000);
+  }, 60_000);
 
   it("opens and closes a trade on DIA's live signed price", async () => {
     const d = await Desk.open(dia());

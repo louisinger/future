@@ -16,6 +16,27 @@ import sample from "./testdata/dia.json";
 
 // A response of DIA's registry, recorded from its public RPC.
 const answer = () => new Response(JSON.stringify({ result: sample.result }));
+const SIGNER = "6f8b0911b1c77de54e113e326ed4bac69da5c51c";
+const OTHER = "10e34723aa722c7a9860f5ec6446f22252db168a";
+const event = (hash: string, signer: string) => ({
+  topics: ["0x00", `0x${hash.repeat(32)}`, "0x00", "0x00"],
+  data: `0x${"00".repeat(44)}${signer}`,
+});
+/**
+ * A registry whose latest update is another signer's. Its events list `signers` oldest first,
+ * and it serves the recorded update for the hash of an event of the trusted signer.
+ */
+const registry = (signers: string[]) =>
+  vi.fn(async (_url: unknown, init?: RequestInit) => {
+    const { method, params } = JSON.parse(String(init?.body)) as { method: string; params: { data: string }[] };
+    const reply = (result: unknown) => new Response(JSON.stringify({ result }));
+    if (method === "eth_blockNumber") return reply("0x3e8");
+    if (method === "eth_getLogs") return reply(signers.map((s, i) => event(`a${i}`, s)));
+    const hash = params[0].data.slice(10);
+    if (hash.length !== 64) return reply(otherSigner());
+    const at = Number(hash[1]);
+    return reply(signers[at] === SIGNER ? sample.result : otherSigner());
+  });
 // The same update with another price: its signature is no longer the pinned signer's.
 const otherSigner = () => {
   const words = sample.result.slice(2).match(/.{64}/g) as string[];
@@ -93,32 +114,25 @@ describe("dia", () => {
     await expect(oracle.latest()).rejects.toThrow(OracleError);
   });
 
-  it("keeps the last update and asks again soon when the latest is another signer's", async () => {
-    let other = false;
-    const request = vi.fn(
-      async () => new Response(JSON.stringify({ result: other ? otherSigner() : sample.result })),
-    );
-    const oracle = dia(request);
-    const first = await oracle.latest();
-
-    other = true;
-    for (let asked = 2; asked <= 4; asked++) {
-      vi.advanceTimersByTime(21_000);
-      expect(await oracle.latest()).toBe(first);
-      expect(request).toHaveBeenCalledTimes(asked);
-      vi.advanceTimersByTime(4_000);
-      expect(await oracle.latest()).toBe(first);
-      expect(request).toHaveBeenCalledTimes(asked);
-    }
+  it("reads the trusted signer's newest update when another signed the latest", async () => {
+    const request = registry([SIGNER, OTHER, SIGNER, OTHER]);
+    const u = await dia(request).latest();
+    expect(u.time).toBe(sample.time);
+    const calls = request.mock.calls.map(([, init]) => JSON.parse(String(init?.body)) as { method: string; params: { data?: string; fromBlock?: string }[] });
+    expect(calls.map((c) => c.method)).toEqual(["eth_call", "eth_blockNumber", "eth_getLogs", "eth_call"]);
+    expect(calls[2].params[0].fromBlock).toBe("0x190");
+    expect(calls[3].params[0].data?.slice(10)).toBe("a2".repeat(32));
   });
 
-  it("has no price while the only update seen is another signer's", async () => {
-    const request = vi.fn(async () => new Response(JSON.stringify({ result: otherSigner() })));
+  it("has no price while only another signer has published lately, and asks again soon", async () => {
+    const request = registry([OTHER, OTHER]);
     const oracle = dia(request);
     await expect(oracle.latest()).rejects.toThrow(OtherSignerError);
+    await expect(oracle.latest()).rejects.toThrow(OracleError);
+    expect(request).toHaveBeenCalledTimes(3);
     vi.advanceTimersByTime(5_000);
     await expect(oracle.latest()).rejects.toThrow(OtherSignerError);
-    expect(request).toHaveBeenCalledTimes(2);
+    expect(request).toHaveBeenCalledTimes(6);
   });
 
   it("fails without a first answer and waits before asking again", async () => {

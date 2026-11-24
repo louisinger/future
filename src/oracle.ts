@@ -16,6 +16,8 @@ const DIA_CHAIN = 1050n;
 export const DIA_KEY = "1002b79a8537202478fb5285c4b580d32160471c2671ad8cc0711f9dd8c88f962277";
 export const DIA_EXPLORER = `https://explorer.diadata.org/address/0x${DIA_REGISTRY}`;
 
+// Lasernet makes a block every 0.3 seconds: this is about three minutes of updates.
+const LOOKBACK_BLOCKS = 600n;
 // DIA publishes about every 25 seconds: asking more often than this returns the same update.
 const REUSE_MS = 20_000;
 const FIRST_RETRY_MS = 5_000;
@@ -47,7 +49,7 @@ export class OracleError extends Error {}
 /** DIA has several signers taking turns; a market's contracts take the prices of one. */
 export class OtherSignerError extends OracleError {
   constructor() {
-    super("DIA's latest price is from a signer this market does not use, the next one is seconds away");
+    super("DIA has no recent price from the signer this market uses");
   }
 }
 
@@ -136,30 +138,56 @@ const abiString = (s: string) => {
   const b = utf8(s);
   return hex.encode(word(BigInt(b.length))) + hex.encode(b).padEnd(Math.ceil(b.length / 32) * 64, "0");
 };
-const LATEST_UPDATE = JSON.stringify({
-  jsonrpc: "2.0",
-  id: 1,
-  method: "eth_call",
-  params: [
+const selector = (signature: string) => `0x${hex.encode(name(signature)).slice(0, 8)}`;
+const registry = (data: string) => [{ to: `0x${DIA_REGISTRY}`, data }, "latest"];
+const LATEST_UPDATE = registry(
+  selector("getLatestIntentByType(string,string)") +
+    hex.encode(word(64n)) +
+    hex.encode(word(128n)) +
+    abiString("OracleUpdate") +
+    abiString("BTC/USD"),
+);
+const UPDATE_REGISTERED = `0x${hex.encode(name("IntentRegistered(bytes32,string,uint256,uint256,address)"))}`;
+const BTC_USD = `0x${hex.encode(name("BTC/USD"))}`;
+// An Ethereum address is the end of the hash of the uncompressed key.
+const DIA_SIGNER = hex.encode(
+  keccak_256(secp256k1.Point.fromBytes(hex.decode(DIA_KEY).subarray(1)).toBytes(false).subarray(1)).subarray(12),
+);
+
+type Rpc = (method: string, params: unknown[]) => Promise<unknown>;
+
+/**
+ * The newest BTC/USD update signed by the key the contracts trust. The registry's own "latest" is
+ * whichever signer published last, so when that is another one, this finds the trusted signer's
+ * in the registry's recent events and reads it by its hash.
+ */
+export async function trustedUpdate(rpc: Rpc): Promise<PriceUpdate> {
+  try {
+    return decodeDia(String(await rpc("eth_call", LATEST_UPDATE)));
+  } catch (e) {
+    if (!(e instanceof OtherSignerError)) throw e;
+  }
+  const head = BigInt(String(await rpc("eth_blockNumber", [])));
+  const events = (await rpc("eth_getLogs", [
     {
-      to: `0x${DIA_REGISTRY}`,
-      data:
-        `0x${hex.encode(name("getLatestIntentByType(string,string)")).slice(0, 8)}` +
-        hex.encode(word(64n)) +
-        hex.encode(word(128n)) +
-        abiString("OracleUpdate") +
-        abiString("BTC/USD"),
+      address: `0x${DIA_REGISTRY}`,
+      topics: [UPDATE_REGISTERED, null, BTC_USD],
+      fromBlock: `0x${(head > LOOKBACK_BLOCKS ? head - LOOKBACK_BLOCKS : 0n).toString(16)}`,
+      toBlock: "latest",
     },
-    "latest",
-  ],
-});
+  ])) as { topics?: string[]; data?: string }[];
+  const mine = Array.isArray(events)
+    ? events.filter((e) => e.data?.toLowerCase().endsWith(DIA_SIGNER) && e.topics?.length === 4).at(-1)
+    : undefined;
+  if (!mine?.topics) throw new OtherSignerError();
+  return decodeDia(String(await rpc("eth_call", registry(selector("getIntent(bytes32)") + mine.topics[1].slice(2)))));
+}
 
 /**
  * DIA's live BTC/USD price, read from its public RPC with no key and no account. However often it
- * is asked, it sends one request per update DIA publishes, shares it between callers, and backs
- * off when DIA does not answer, serving the last update for as long as the contracts take it.
- * The registry only tells its latest update: when that one is another signer's, it asks again
- * a few seconds later.
+ * is asked, it looks for a new update at most once per update DIA publishes, shares it between
+ * callers, and backs off when DIA does not answer, serving the last update for as long as the
+ * contracts take it.
  */
 export function dia(request: typeof fetch = (...a) => fetch(...a)): Oracle {
   let last: PriceUpdate | undefined;
@@ -168,17 +196,21 @@ export function dia(request: typeof fetch = (...a) => fetch(...a)): Oracle {
   let failures = 0;
   let pending: Promise<PriceUpdate> | undefined;
 
+  const rpc: Rpc = async (method, params) => {
+    const res = await request(DIA_RPC, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new OracleError(`DIA answered ${res.status}`);
+    const { result } = (await res.json()) as { result?: unknown };
+    if (result === undefined || result === null) throw new OracleError("DIA returned no price");
+    return result;
+  };
   const load = async (): Promise<PriceUpdate> => {
     try {
-      const res = await request(DIA_RPC, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: LATEST_UPDATE,
-        cache: "no-store",
-      });
-      if (!res.ok) throw new OracleError(`DIA answered ${res.status}`);
-      const { result } = (await res.json()) as { result?: string };
-      last = decodeDia(result ?? "");
+      last = await trustedUpdate(rpc);
       fetchedAt = Date.now();
       failures = 0;
       return last;

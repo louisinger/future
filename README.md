@@ -40,15 +40,17 @@ Each network is a separate market with its own key and addresses in the browser.
 
 `src/oracle.ts` reads DIA's latest signed BTC/USD update from its public RPC,
 `https://rpc.diadata.org`, with no account and no key. Each browser asks for itself, at most
-once per 20 seconds however many trades are open (DIA publishes about every 25), shares the
+once per 20 seconds however many trades are open (DIA publishes about every 25) with one to
+four small requests, shares the
 answer between everything on the page, and backs off up to two minutes when refused while it
 serves the last update the contracts still accept.
 
-DIA has two signers taking turns and its registry only tells the latest update. The contracts
-pin one key, `0x6f8b…c51c`, which signs most updates: when the latest is the other's, the page
-keeps the last one it has and asks again five seconds later, so a freshly opened page can wait
-up to half a minute for its first price. `node scripts/dia-signer.mjs` prints who signed the
-latest update. A market on another key is a new set of addresses.
+DIA has two signers taking turns, about ten seconds apart, and the contracts pin one key,
+`0x6f8b…c51c`. The registry's "latest" is whoever published last, so when that is the other
+signer the page finds the pinned signer's newest update in the registry's events and reads it by
+its hash: every price it uses is that signer's, and under half a minute old. `node
+scripts/dia-signer.mjs` prints who signed the latest update. A market on another key is a new
+set of addresses.
 
 ### The executor
 
